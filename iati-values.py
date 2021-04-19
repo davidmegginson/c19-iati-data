@@ -42,6 +42,14 @@ def is_transaction_strict (transaction):
     # FIXME actually check
     return True
 
+def add_transactions (transactions, types):
+    total = 0
+    for transaction in transactions:
+        if transaction.value is None:
+            continue
+        elif transaction.type in types:
+            total += convert_currency(transaction.value, transaction.currency, "USD", transaction.date)
+    return total
 
 def pack_key (parts):
     return (
@@ -91,16 +99,45 @@ def process_activities (filenames):
             activity_humanitarian = is_activity_humanitarian(activity)
             activity_strict = is_activity_strict(activity)
 
+
+            # Figure out how to factor new money
+
+            incoming_funds = add_transactions(activity.transactions, ["1"])
+            outgoing_commitments = add_transactions(activity.transactions, ["2"])
+            spending = add_transactions(activity.transactions, ["3", "4"])
+            incoming_commitments = add_transactions(activity.transactions, ["11"])
+
+            incoming = max(incoming_commitments, incoming_funds)
+            if incoming < 0:
+                incoming = 0
+
+            if outgoing_commitments > incoming:
+                commitment_factor = (outgoing_commitments - incoming) / outgoing_commitments
+            else:
+                commitment_factor = 0.0
+
+            if spending > incoming:
+                spending_factor = (spending - incoming) / spending
+            else:
+                spending_factor = 0.0
+
+
+            # Walk through the transactions
+
             for transaction in activity.transactions:
+
+                if transaction.value is None:
+                    continue
+                else:
+                    value = convert_currency(transaction.value, transaction.currency, "USD", transaction.date)
 
                 if transaction.type == "2":
                     type = "commitments"
+                    net_value = value * commitment_factor
                 elif transaction.type in ["3", "4"]:
                     type = "spending"
+                    net_value = value * spending_factor
                 else:
-                    continue
-
-                if transaction.value is None:
                     continue
 
                 parts = {
@@ -113,8 +150,6 @@ def process_activities (filenames):
                 }
                     
 
-                value = convert_currency(float(transaction.value), transaction.currency.upper(), "USD", transaction.date)
-
                 country_splits = make_country_splits(transaction)
                 if not country_splits:
                     country_splits = activity_country_splits
@@ -124,13 +159,29 @@ def process_activities (filenames):
 
                 for country, country_percentage in country_splits.items():
                     for sector, sector_percentage in sector_splits.items():
-                        parts["country"] = country
-                        parts["sector"] = sector
-                        key = pack_key(parts)
-                        accumulators.setdefault(key, {
-                            "commitments": 0,
-                            "spending": 0,
-                        })[type] += value * country_percentage * sector_percentage
+
+                        net_money = int(round(net_value * country_percentage * sector_percentage))
+                        total_money = int(round(value * country_percentage * sector_percentage))
+
+                        if net_money or total_money:
+
+                            parts["country"] = country
+                            parts["sector"] = sector
+                            key = pack_key(parts)
+                            accumulators.setdefault(key, {
+                                "net": {
+                                    "commitments": 0,
+                                    "spending": 0,
+                                },
+                                "total": {
+                                    "commitments": 0,
+                                    "spending": 0,
+                                }
+                            })
+
+
+                            accumulators[key]["net"][type] += net_money
+                            accumulators[key]["total"][type] += total_money
 
     return accumulators
 
@@ -140,8 +191,8 @@ def unpack_accumulators (accumulators):
     for key in sorted(accumulators.keys()):
         value = accumulators[key]
         parts = unpack_key(key)
-        parts["commitments"] = accumulators[key]["commitments"]
-        parts["spending"] = accumulators[key]["spending"]
+        parts["net"] = accumulators[key]["net"]
+        parts["total"] = accumulators[key]["total"]
         rows.append(parts)
     return rows
 
