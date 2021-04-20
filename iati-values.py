@@ -1,46 +1,120 @@
 import diterator, json, sys
 
+json_files = {}
 
-def make_country_splits(entity):
-    """ Generate recipient-country splits by percentage for an activity or transaction """
+def load_json (filename):
+    """ Load a JSON file if not already in memory, then return it """
+    global json_files
+    if not filename in json_files:
+        with open(filename, "r") as input:
+            json_files[filename] = json.load(input)
+    return json_files[filename]
+
+org_names = {}
+
+def get_org_name (org):
+    global org_names
+    if not org.ref:
+        return str(org)
+    elif org.ref in org_names:
+        return org_names[org.ref]
+    else:
+        org_names[org.ref] = str(org)
+        return str(org)
+
+def get_sector_name (code):
+    sector_info = load_json("data/Sector.json")
+    for info in sector_info["data"]:
+        if info["code"] == code:
+            return info["name"]
+    return "(Unspecified sector)"
+
+def get_country_name (code):
+    country_info = load_json("data/countries.json")
+    for info in country_info["data"]:
+        if info["iso2"] == code:
+            return info["label"]["default"]
+    return "(Unspecified country)"
+
+def make_country_splits(entity, default_country="XX"):
+    """ Generate recipient-country splits by percentage for an activity or transaction
+    FIXME - if there's no percentage for a country, default to 100% (could overcount)
+    If there are no countries, assign 1.0 (100%) to the default provided.
+
+    """
     splits = {}
     for country in entity.recipient_countries:
-         # TODO: check for bad values
-        code = country.code.upper()
-        splits[code] = float(country.percentage if country.percentage else 100.0) / 100.0
-    return splits
+        code = country.code
+        if code:
+            splits[code.upper()] = float(country.percentage if country.percentage else 100.0) / 100.0
+    return splits if splits else { default_country: 1.0 }
 
 
-def make_sector_splits(entity, vocabulary_code):
-    """ Generate sector splits by percentage for an activity or transaction """
+def make_sector_splits(entity, vocabulary_code, default_sector="99999"):
+    """ Generate sector splits by percentage for an activity or transaction
+    FIXME - if there's no percentage for a sector, default to 100% (could overcount)
+    If there are no sectors, assign 1.0 (100%) to the default provided.
+    """
     splits = {}
     for sector in entity.sectors_by_vocabulary.get(vocabulary_code, []):
-         # TODO: check for bad values
-        code = sector.code.upper()
-        splits[code] = float(sector.percentage if sector.percentage else 100.0) / 100.0
-    return splits
+        code = sector.code
+        if code:
+            splits[code.upper()] = float(sector.percentage if sector.percentage else 100.0) / 100.0
+    return splits if splits else { default_sector: 1.0 }
 
 
-def convert_currency (value, source_currency, destination_currency, isodate):
-    # FIXME actually convert
+def convert_to_usd (value, source_currency, isodate):
+    # FIXME not using date
+    value = float(value)
+    source_currency = source_currency.upper().strip()
+    if source_currency != "USD":
+        rates = load_json("data/fallbackrates.json")
+        if source_currency in rates["rates"]:
+            value /= rates["rates"][source_currency]
+        else:
+            value = 0
     return int(round(value))
+            
+def has_c19_scope (scopes):
+    """ Check if the COVID-19 GLIDE number or HRP code is present """
+    for scope in scopes:
+        if scope.type == "1" and scope.vocabulary == "1-2" and scope.code.upper() == "EP-2020-000012-001":
+            return True
+        elif scope.type == "2" and scope.vocabulary == "2-1" and scope.code.upper() == "HCOVD20":
+            return True
+    return False
 
+def has_c19_tag (tags):
+    """ Check if the COVID-19 tag is present """
+    for tag in tags:
+        if tag.vocabulary == "99" and tag.code.upper() == "COVID-19":
+            return True
+    return False
 
-def is_activity_humanitarian (activity):
-    # FIXME actually check
-    return True
+def has_c19_sector (sectors):
+    """ Check if the DAC COVID-19 sector code is present """
+    return "12264" in [sector.code.upper() for sector in sectors if sector.vocabulary=="1" and sector.code]
 
-def is_transaction_humanitarian (transaction):
-    # FIXME actually check
-    return True
+def is_c19_narrative (narratives):
+    """ Check a dict of different-language text for the string "COVID-19" (case-insensitive) """
+    for lang, text in narratives.items():
+        if "COVID-19" in text.upper():
+            return True
+    return False
 
 def is_activity_strict (activity):
-    # FIXME actually check
-    return True
+    return (
+        has_c19_scope(activity.humanitarian_scopes) or
+        has_c19_tag(activity.tags) or
+        has_c19_sector(activity.sectors) or
+        is_c19_narrative(activity.title.narratives)
+    )
 
 def is_transaction_strict (transaction):
-    # FIXME actually check
-    return True
+    return (
+        has_c19_sector(transaction.sectors) or
+        (transaction.description and is_c19_narrative(transaction.description.narratives))
+    )
 
 def add_transactions (transactions, types):
     total = 0
@@ -48,7 +122,7 @@ def add_transactions (transactions, types):
         if transaction.value is None:
             continue
         elif transaction.type in types:
-            total += convert_currency(transaction.value, transaction.currency, "USD", transaction.date)
+            total += convert_to_usd(transaction.value, transaction.currency, transaction.date)
     return total
 
 def pack_key (parts):
@@ -86,7 +160,7 @@ def process_activities (filenames):
                 continue
             activities_seen.add(activity.identifier)
 
-            org = str(activity.reporting_org)
+            org = get_org_name(activity.reporting_org)
 
             activity_country_splits = make_country_splits(activity)
             if not activity_country_splits:
@@ -96,7 +170,6 @@ def process_activities (filenames):
             if not activity_sector_splits:
                 activity_sector_splits = { "(unspecified)": 1.0 }
 
-            activity_humanitarian = is_activity_humanitarian(activity)
             activity_strict = is_activity_strict(activity)
 
 
@@ -122,14 +195,16 @@ def process_activities (filenames):
                 spending_factor = 0.0
 
 
+            #
             # Walk through the transactions
+            #
 
             for transaction in activity.transactions:
 
                 if transaction.value is None:
                     continue
                 else:
-                    value = convert_currency(transaction.value, transaction.currency, "USD", transaction.date)
+                    value = convert_to_usd(transaction.value, transaction.currency, transaction.date)
 
                 if transaction.type == "2":
                     type = "commitments"
@@ -145,14 +220,19 @@ def process_activities (filenames):
                     "org": org,
                     "country": None,
                     "sector": None,
-                    "is_humanitarian": activity_humanitarian or is_transaction_humanitarian(transaction),
+                    "is_humanitarian": activity.humanitarian or transaction.humanitarian,
                     "is_strict": activity_strict or is_transaction_strict(transaction),
                 }
                     
 
+                #
+                # Make the splits for the transaction (default to activity splits)
+                #
+                
                 country_splits = make_country_splits(transaction)
                 if not country_splits:
                     country_splits = activity_country_splits
+
                 sector_splits = make_sector_splits(transaction, "1")
                 if not sector_splits:
                     sector_splits = activity_sector_splits
@@ -188,12 +268,14 @@ def process_activities (filenames):
 
 def unpack_accumulators (accumulators):
     rows = []
-    for key in sorted(accumulators.keys()):
+    for key in accumulators.keys():
         value = accumulators[key]
         parts = unpack_key(key)
         parts["net"] = accumulators[key]["net"]
         parts["total"] = accumulators[key]["total"]
         rows.append(parts)
+        parts["country"] = get_country_name(parts["country"])
+        parts["sector"] = get_sector_name(parts["sector"])
     return rows
 
 if __name__ == "__main__":
