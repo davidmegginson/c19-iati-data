@@ -1,4 +1,9 @@
-import diterator, json, sys
+""" Compile total values by month, org, sector, and country for IATI activities
+Also disaggregate by strict vs loose C19, and humanitarian status
+
+"""
+
+import datetime, diterator, json, sys
 
 json_files = {}
 
@@ -50,15 +55,15 @@ def make_country_splits(entity, default_country="XX"):
     return splits if splits else { default_country: 1.0 }
 
 
-def make_sector_splits(entity, vocabulary_code, default_sector="99999"):
+def make_sector_splits(entity, vocabulary_code="1", default_sector="99999"):
     """ Generate sector splits by percentage for an activity or transaction
     FIXME - if there's no percentage for a sector, default to 100% (could overcount)
     If there are no sectors, assign 1.0 (100%) to the default provided.
     """
     splits = {}
-    for sector in entity.sectors_by_vocabulary.get(vocabulary_code, []):
+    for sector in entity.sectors:
         code = sector.code
-        if code:
+        if sector.vocabulary == "1" and code:
             splits[code.upper()] = float(sector.percentage if sector.percentage else 100.0) / 100.0
     return splits if splits else { default_sector: 1.0 }
 
@@ -93,7 +98,10 @@ def has_c19_tag (tags):
 
 def has_c19_sector (sectors):
     """ Check if the DAC COVID-19 sector code is present """
-    return "12264" in [sector.code.upper() for sector in sectors if sector.vocabulary=="1" and sector.code]
+    for sector in sectors:
+        if sector.vocabulary == "1" and sector.code == "12264":
+            return True
+    return False
 
 def is_c19_narrative (narratives):
     """ Check a dict of different-language text for the string "COVID-19" (case-insensitive) """
@@ -103,18 +111,18 @@ def is_c19_narrative (narratives):
     return False
 
 def is_activity_strict (activity):
-    return (
+    return True if (
         has_c19_scope(activity.humanitarian_scopes) or
         has_c19_tag(activity.tags) or
         has_c19_sector(activity.sectors) or
         is_c19_narrative(activity.title.narratives)
-    )
+    ) else False
 
 def is_transaction_strict (transaction):
-    return (
+    return True if (
         has_c19_sector(transaction.sectors) or
         (transaction.description and is_c19_narrative(transaction.description.narratives))
-    )
+    ) else False
 
 def add_transactions (transactions, types):
     total = 0
@@ -152,44 +160,66 @@ def process_activities (filenames):
 
     activities_seen = set()
 
+    this_month = datetime.datetime.utcnow().isoformat()[:7]
+
     for filename in filenames:
         for activity in diterator.XMLIterator(filename):
 
+            #
             # Don't use the same activity twice
+            #
+            
             if activity.identifier in activities_seen:
                 continue
             activities_seen.add(activity.identifier)
 
+            #
+            # Get the org name and C19 strictness (at activity level)
+            #
+            
             org = get_org_name(activity.reporting_org)
+            activity_strict = is_activity_strict(activity)
 
+            #
+            # Figure out default country/sector percentage splits at the activity level
+            #
+            
             activity_country_splits = make_country_splits(activity)
             if not activity_country_splits:
                 activity_country_splits = { "(unspecified)": 1.0 }
 
-            activity_sector_splits = make_sector_splits(activity, "1")
+            activity_sector_splits = make_sector_splits(activity)
             if not activity_sector_splits:
                 activity_sector_splits = { "(unspecified)": 1.0 }
 
-            activity_strict = is_activity_strict(activity)
 
-
+            #
             # Figure out how to factor new money
+            #
 
+            # Total up the 4 kinds of transactions (with currency conversion)
             incoming_funds = add_transactions(activity.transactions, ["1"])
             outgoing_commitments = add_transactions(activity.transactions, ["2"])
             spending = add_transactions(activity.transactions, ["3", "4"])
             incoming_commitments = add_transactions(activity.transactions, ["11"])
 
+            # Figure out total incoming money (never less than zero)
             incoming = max(incoming_commitments, incoming_funds)
             if incoming < 0:
                 incoming = 0
 
-            if outgoing_commitments > incoming:
+            # Factor to apply to outgoing commitments
+            if incoming == 0:
+                commitment_factor = 1.0
+            elif outgoing_commitments > incoming:
                 commitment_factor = (outgoing_commitments - incoming) / outgoing_commitments
             else:
                 commitment_factor = 0.0
 
-            if spending > incoming:
+            # Factor to apply to outgoing spending
+            if incoming == 0:
+                spending_factor = 1.0
+            elif spending > incoming:
                 spending_factor = (spending - incoming) / spending
             else:
                 spending_factor = 0.0
@@ -201,22 +231,41 @@ def process_activities (filenames):
 
             for transaction in activity.transactions:
 
+                #
+                # Skip transactions with no values, or with out-of-range months
+                #
+
+                month = transaction.date[:7]
+                if month < "2020-01" or month > this_month:
+                    continue
+                
                 if transaction.value is None:
                     continue
                 else:
                     value = convert_to_usd(transaction.value, transaction.currency, transaction.date)
 
+                #
+                # Set the factors based on the type (commitments or spending)
+                #
+                
                 if transaction.type == "2":
+                    # outgoing commitment
                     type = "commitments"
                     net_value = value * commitment_factor
                 elif transaction.type in ["3", "4"]:
+                    # disbursement or expenditure (== spending)
                     type = "spending"
                     net_value = value * spending_factor
                 else:
+                    # if it's anything else, skip it
                     continue
 
+                #
+                # Values that go into the unique key
+                #
+                
                 parts = {
-                    "month": transaction.date[:7],
+                    "month": month,
                     "org": org,
                     "country": None,
                     "sector": None,
@@ -233,9 +282,14 @@ def process_activities (filenames):
                 if not country_splits:
                     country_splits = activity_country_splits
 
-                sector_splits = make_sector_splits(transaction, "1")
+                sector_splits = make_sector_splits(transaction)
                 if not sector_splits:
                     sector_splits = activity_sector_splits
+
+                #
+                # Apply the country and sector percentage splits to the transaction
+                # We may end up with multiple entries
+                #
 
                 for country, country_percentage in country_splits.items():
                     for sector, sector_percentage in sector_splits.items():
@@ -243,11 +297,15 @@ def process_activities (filenames):
                         net_money = int(round(net_value * country_percentage * sector_percentage))
                         total_money = int(round(value * country_percentage * sector_percentage))
 
+                        # Fill in only if we end up with a non-zero value
                         if net_money or total_money:
 
+                            # Fill in remaining parts for the key
                             parts["country"] = country
                             parts["sector"] = sector
                             key = pack_key(parts)
+
+                            # Add a default entry if it doesn't exist yet
                             accumulators.setdefault(key, {
                                 "net": {
                                     "commitments": 0,
@@ -259,16 +317,22 @@ def process_activities (filenames):
                                 }
                             })
 
-
+                            # Add the money to the accumulators
                             accumulators[key]["net"][type] += net_money
                             accumulators[key]["total"][type] += total_money
 
+    #
+    # Return the accumulators after processing all activities and transactions
+    #
+    
     return accumulators
 
 
 def unpack_accumulators (accumulators):
+    """ Unpack the accumulators into a usable data structure """
+    
     rows = []
-    for key in accumulators.keys():
+    for key in sorted(accumulators.keys()):
         value = accumulators[key]
         parts = unpack_key(key)
         parts["net"] = accumulators[key]["net"]
@@ -278,7 +342,20 @@ def unpack_accumulators (accumulators):
         parts["sector"] = get_sector_name(parts["sector"])
     return rows
 
+
+#
+# Main entry point
+#
+
 if __name__ == "__main__":
+
+    # Build the accumulators from the IATI activities and transactions
     accumulators = process_activities(sys.argv[1:])
+
+    # Unpack the accumulators into a usable data structure
     rows = unpack_accumulators(accumulators)
+    print("Found {} unique data rows".format(len(rows)), file=sys.stderr)
+
+    # Dump the result as JSON
     print(json.dumps(rows, indent=4))
+
