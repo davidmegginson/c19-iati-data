@@ -28,6 +28,18 @@ After running (which will take a few minutes), the outputs/ directory will conta
 
 ``outputs/commitments-spending.json`` - commitments and spending, broken down by month, org, sector, country, humanitarian status, and strict/loose COVID-19 matching
 
+Alternatively, you can perform all of these steps except the initial IATI data download automatically, using the enclosed Makefile:
+
+```
+$ make all
+```
+
+To remove generated files and the virtual environment, use
+
+```
+$ make clean
+```
+
 ## Output formats
 
 ### Activity counts
