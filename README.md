@@ -55,9 +55,9 @@ Within each section is a list of JSON objects that look like this:
 
 (The first property will be "sector" or "country" rather than "org", depending on the section.)
 
-``is\_humanitarian`` - true if these are activities specifically flagged as humanitarian; false otherwise
+``is_humanitarian`` - true if these are activities specifically flagged as humanitarian; false otherwise
 
-``is\_strict`` - true if these are activities that pass a strict test for relevance to COVID-19; false if they pass only a looser test
+``is_strict`` - true if these are activities that pass a strict test for relevance to COVID-19; false if they pass only a looser test
 
 ``activities`` - the total number of activities for the org, sector, or country that match the _is\_strict_ and _is\_humanitarian_ values
 
@@ -95,9 +95,9 @@ Each object is a breakdown of commitments and spending for each unique combinati
 
 ``sector`` - the name of the sector to which the money applies
 
-``is\_humanitarian`` - true if this money was specifically flagged as humanitarian; false otherwise
+``is_humanitarian`` - true if this money was specifically flagged as humanitarian; false otherwise
 
-``is\_strict`` - true if this money passes a stricter test for relevance to COVID-19; false if it passes only a looser test
+``is_strict`` - true if this money passes a stricter test for relevance to COVID-19; false if it passes only a looser test
 
 The dependent variables are different financial amounts, in US dollars (USD):
 
