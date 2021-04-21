@@ -384,6 +384,8 @@ def process_activities (filenames):
                             })
 
                             # Add the money to the accumulators
+                            # FIXME: will double-count activities if the strict or humanitarian status of individual
+                            # transactions differs in the same activity
                             accumulators[key]["net"][type] += net_money
                             accumulators[key]["total"][type] += total_money
 
