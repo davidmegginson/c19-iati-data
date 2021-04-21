@@ -3,9 +3,32 @@ Also disaggregate by strict vs loose C19, and humanitarian status
 
 """
 
-import datetime, diterator, json, sys
+import datetime, diterator, json, re, sys
+
+
+#
+# Constants
+#
+
+COMMITMENTS_SPENDING_JSON = "outputs/commitments-spending.json"
+
+ACTIVITY_COUNTS_JSON = "outputs/activity-counts.json"
+
+
+#
+# Global variables
+#
 
 json_files = {}
+""" Cache for loaded JSON files """
+
+org_names = {}
+""" Map from IATI identifiers to organisation names """
+
+
+#
+# Utility functions
+#
 
 def load_json (filename):
     """ Load a JSON file if not already in memory, then return it """
@@ -15,24 +38,68 @@ def load_json (filename):
             json_files[filename] = json.load(input)
     return json_files[filename]
 
-org_names = {}
+def clean_string (s):
+    """ Normalise whitespace in a single, and remove any punctuation at the start/end """
+    s = re.sub(r'^\W*(\w.*)\W*$', r'\1', s)
+    s = re.sub(r'\s+', ' ', s)
+    return s.strip()
+
+def pack_key (parts):
+    return (
+        parts["month"],
+        parts["org"],
+        parts["country"],
+        parts["sector"],
+        parts["is_humanitarian"],
+        parts["is_strict"],
+    )
+
+def unpack_key (key):
+    return {
+        "month": key[0],
+        "org": key[1],
+        "country": key[2],
+        "sector": key[3],
+        "is_humanitarian": key[4],
+        "is_strict": key[5],
+    }
+
+
+#
+# Lookup functions
+#
 
 def get_org_name (org):
-    global org_names
-    if not org.ref:
-        return str(org)
-    elif org.ref in org_names:
-        return org_names[org.ref]
-    else:
-        org_names[org.ref] = str(org)
-        return str(org)
+    """ Standardise organisation names
+    For now, use the first name found for an identifier.
+    Later, we can reference the registry.
 
-def get_sector_name (code):
-    sector_info = load_json("data/Sector.json")
-    for info in sector_info["data"]:
-        if info["code"] == code:
-            return info["name"]
-    return "(Unspecified sector)"
+    """
+    global org_names
+    ref = org.ref
+    name = clean_string(str(org.name))
+
+    if ref and ref in org_names:
+        return org_names[ref]
+    else:
+        # FIXME - if the name is missing the first time, but there's an IATI identifier,
+        # we'll have blanks initially; we need an initial table to prime it
+        if name:
+            org_names[ref] = name
+            return name
+        else:
+            return "(Unspecified org)"
+
+def get_sector_group_name (code):
+    """ Look up a group name for a 3- or 5-digit sector code.
+
+    """
+    sector_info = load_json("data/dac3-sector-map.json")
+    code = code[:3]
+    if code in sector_info:
+        return sector_info.get(code)["dac-group"]
+    else:
+        return "(Unspecified sector)"
 
 def get_country_name (code):
     country_info = load_json("data/countries.json")
@@ -40,6 +107,23 @@ def get_country_name (code):
         if info["iso2"] == code:
             return info["label"]["default"]
     return "(Unspecified country)"
+
+def convert_to_usd (value, source_currency, isodate):
+    # FIXME not using date
+    value = float(value)
+    source_currency = source_currency.upper().strip()
+    if source_currency != "USD":
+        rates = load_json("data/fallbackrates.json")
+        if source_currency in rates["rates"]:
+            value /= rates["rates"][source_currency]
+        else:
+            value = 0
+    return int(round(value))
+
+
+#
+# Business-logic functions
+#
 
 def make_country_splits(entity, default_country="XX"):
     """ Generate recipient-country splits by percentage for an activity or transaction
@@ -55,31 +139,28 @@ def make_country_splits(entity, default_country="XX"):
     return splits if splits else { default_country: 1.0 }
 
 
-def make_sector_splits(entity, vocabulary_code="1", default_sector="99999"):
+def make_sector_splits(entity, default_sector="99999"):
     """ Generate sector splits by percentage for an activity or transaction
     FIXME - if there's no percentage for a sector, default to 100% (could overcount)
     If there are no sectors, assign 1.0 (100%) to the default provided.
     """
     splits = {}
-    for sector in entity.sectors:
+    sectors = entity.sectors
+
+    # Prefer 3-digit codes to 5-digit
+    if "2" in [sector.vocabulary for sector in sectors]:
+        vocabulary_code = "2"
+    else:
+        vocabulary_code = "1"
+        
+    for sector in sectors:
         code = sector.code
-        if sector.vocabulary == "1" and code:
+        if sector.vocabulary == vocabulary_code and code:
             splits[code.upper()] = float(sector.percentage if sector.percentage else 100.0) / 100.0
+            
     return splits if splits else { default_sector: 1.0 }
 
 
-def convert_to_usd (value, source_currency, isodate):
-    # FIXME not using date
-    value = float(value)
-    source_currency = source_currency.upper().strip()
-    if source_currency != "USD":
-        rates = load_json("data/fallbackrates.json")
-        if source_currency in rates["rates"]:
-            value /= rates["rates"][source_currency]
-        else:
-            value = 0
-    return int(round(value))
-            
 def has_c19_scope (scopes):
     """ Check if the COVID-19 GLIDE number or HRP code is present """
     for scope in scopes:
@@ -124,7 +205,7 @@ def is_transaction_strict (transaction):
         (transaction.description and is_c19_narrative(transaction.description.narratives))
     ) else False
 
-def add_transactions (transactions, types):
+def sum_transactions (transactions, types):
     total = 0
     for transaction in transactions:
         if transaction.value is None:
@@ -133,30 +214,20 @@ def add_transactions (transactions, types):
             total += convert_to_usd(transaction.value, transaction.currency, transaction.date)
     return total
 
-def pack_key (parts):
-    return (
-        parts["month"],
-        parts["org"],
-        parts["country"],
-        parts["sector"],
-        parts["is_humanitarian"],
-        parts["is_strict"],
-    )
 
-def unpack_key (key):
-    return {
-        "month": key[0],
-        "org": key[1],
-        "country": key[2],
-        "sector": key[3],
-        "is_humanitarian": key[4],
-        "is_strict": key[5],
-    }
-
+#
+# Main processing function
+#
 
 def process_activities (filenames):
 
     accumulators = dict()
+
+    activity_counts = {
+        "org": {},
+        "sector": {},
+        "country": {},
+    }
 
     activities_seen = set()
 
@@ -168,10 +239,12 @@ def process_activities (filenames):
             #
             # Don't use the same activity twice
             #
+
+            identifier = activity.identifier
             
-            if activity.identifier in activities_seen:
+            if identifier in activities_seen:
                 continue
-            activities_seen.add(activity.identifier)
+            activities_seen.add(identifier)
 
             #
             # Get the org name and C19 strictness (at activity level)
@@ -185,30 +258,24 @@ def process_activities (filenames):
             #
             
             activity_country_splits = make_country_splits(activity)
-            if not activity_country_splits:
-                activity_country_splits = { "(unspecified)": 1.0 }
-
             activity_sector_splits = make_sector_splits(activity)
-            if not activity_sector_splits:
-                activity_sector_splits = { "(unspecified)": 1.0 }
-
 
             #
             # Figure out how to factor new money
             #
 
-            # Total up the 4 kinds of transactions (with currency conversion)
-            incoming_funds = add_transactions(activity.transactions, ["1"])
-            outgoing_commitments = add_transactions(activity.transactions, ["2"])
-            spending = add_transactions(activity.transactions, ["3", "4"])
-            incoming_commitments = add_transactions(activity.transactions, ["11"])
+            # Total up the 4 kinds of transactions (with currency conversion to USD)
+            incoming_funds = sum_transactions(activity.transactions, ["1"])
+            outgoing_commitments = sum_transactions(activity.transactions, ["2"])
+            spending = sum_transactions(activity.transactions, ["3", "4"])
+            incoming_commitments = sum_transactions(activity.transactions, ["11"])
 
             # Figure out total incoming money (never less than zero)
             incoming = max(incoming_commitments, incoming_funds)
             if incoming < 0:
                 incoming = 0
 
-            # Factor to apply to outgoing commitments
+            # Factor to apply to outgoing commitments for net new money
             if incoming == 0:
                 commitment_factor = 1.0
             elif outgoing_commitments > incoming:
@@ -216,7 +283,7 @@ def process_activities (filenames):
             else:
                 commitment_factor = 0.0
 
-            # Factor to apply to outgoing spending
+            # Factor to apply to outgoing spending for net new money
             if incoming == 0:
                 spending_factor = 1.0
             elif spending > incoming:
@@ -226,7 +293,7 @@ def process_activities (filenames):
 
 
             #
-            # Walk through the transactions
+            # Walk through the transactions one-by-one
             #
 
             for transaction in activity.transactions:
@@ -260,6 +327,9 @@ def process_activities (filenames):
                     # if it's anything else, skip it
                     continue
 
+                is_humanitarian = activity.humanitarian or transaction.humanitarian
+                is_strict = activity_strict or is_transaction_strict(transaction)
+
                 #
                 # Values that go into the unique key
                 #
@@ -269,8 +339,8 @@ def process_activities (filenames):
                     "org": org,
                     "country": None,
                     "sector": None,
-                    "is_humanitarian": activity.humanitarian or transaction.humanitarian,
-                    "is_strict": activity_strict or is_transaction_strict(transaction),
+                    "is_humanitarian": is_humanitarian,
+                    "is_strict": is_strict,
                 }
                     
 
@@ -279,12 +349,8 @@ def process_activities (filenames):
                 #
                 
                 country_splits = make_country_splits(transaction)
-                if not country_splits:
-                    country_splits = activity_country_splits
-
                 sector_splits = make_sector_splits(transaction)
-                if not sector_splits:
-                    sector_splits = activity_sector_splits
+
 
                 #
                 # Apply the country and sector percentage splits to the transaction
@@ -301,8 +367,8 @@ def process_activities (filenames):
                         if net_money or total_money:
 
                             # Fill in remaining parts for the key
-                            parts["country"] = country
-                            parts["sector"] = sector
+                            parts["country"] = get_country_name(country)
+                            parts["sector"] = get_sector_group_name(sector) # it doesn't matter if we get the same one more than once
                             key = pack_key(parts)
 
                             # Add a default entry if it doesn't exist yet
@@ -321,16 +387,23 @@ def process_activities (filenames):
                             accumulators[key]["net"][type] += net_money
                             accumulators[key]["total"][type] += total_money
 
+                            # register the activity with the org, sector, and country separately
+                            for key in ("org", "sector", "country",):
+                                activity_counts[key].setdefault((parts[key], is_humanitarian, is_strict,), set()).add(identifier)
+
     #
     # Return the accumulators after processing all activities and transactions
     #
     
-    return accumulators
+    return (accumulators, activity_counts)
 
 
-def unpack_accumulators (accumulators):
+#
+# Postprocessing
+#
+
+def postprocess_accumulators (accumulators):
     """ Unpack the accumulators into a usable data structure """
-    
     rows = []
     for key in sorted(accumulators.keys()):
         value = accumulators[key]
@@ -338,10 +411,20 @@ def unpack_accumulators (accumulators):
         parts["net"] = accumulators[key]["net"]
         parts["total"] = accumulators[key]["total"]
         rows.append(parts)
-        parts["country"] = get_country_name(parts["country"])
-        parts["sector"] = get_sector_name(parts["sector"])
     return rows
 
+def postprocess_activity_counts (activity_counts):
+    result = {}
+    for key in activity_counts.keys():
+        result[key] = []
+        for entry in sorted(activity_counts[key].keys()):
+            result[key].append({
+                key: entry[0],
+                "is_humanitarian": entry[1],
+                "is_strict": entry[2],
+                "activities": len(activity_counts[key][entry]),
+            })
+    return result
 
 #
 # Main entry point
@@ -350,12 +433,14 @@ def unpack_accumulators (accumulators):
 if __name__ == "__main__":
 
     # Build the accumulators from the IATI activities and transactions
-    accumulators = process_activities(sys.argv[1:])
+    accumulators, activity_counts = process_activities(sys.argv[1:])
 
-    # Unpack the accumulators into a usable data structure
-    rows = unpack_accumulators(accumulators)
-    print("Found {} unique data rows".format(len(rows)), file=sys.stderr)
+    # Dump the commitments and spending as JSON
+    with open(COMMITMENTS_SPENDING_JSON, "w") as output:
+        json.dump(postprocess_accumulators(accumulators), output, indent=4)
 
-    # Dump the result as JSON
-    print(json.dumps(rows, indent=4))
+    # Dump the activity counts as JSON
+    with open(ACTIVITY_COUNTS_JSON, "w") as output:
+        json.dump(postprocess_activity_counts(activity_counts), output, indent=4)
 
+# end

@@ -1,13 +1,15 @@
 
 VENV=venv/bin/activate
-SCRIPT=iati-values.py
-MASTER_DATA=data/fallbackrates.json data/countries.json data/Sector.json
+SCRIPT=generate-data.py
+MASTER_DATA=data/fallbackrates.json data/countries.json data/dac3-sector-map.json
 IATI_DATA=iati-downloads/*.xml
 
-all: outputs/contributions-spending.json
+OUTPUTS=outputs/contributions-spending.json outputs/activity-counts.json
 
-outputs/contributions-spending.json: $(SCRIPT) $(MASTER_DATA) iati-downloads/*.xml $(VENV)
-	. $(VENV) && mkdir -p outputs && time python $(SCRIPT) $(IATI_DATA) > outputs/contributions-spending.json
+all: $(OUTPUTS)
+
+$(OUTPUTS): $(SCRIPT) $(MASTER_DATA) iati-downloads/*.xml $(VENV)
+	. $(VENV) && mkdir -p outputs && time python $(SCRIPT) $(IATI_DATA)
 
 $(VENV): requirements.txt
 	python3 -m venv venv && . $(VENV) && pip install -r requirements.txt
