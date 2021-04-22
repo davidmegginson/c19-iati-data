@@ -8,6 +8,8 @@ OUTPUTS=outputs/contributions-spending.json outputs/activity-counts.json
 
 all: $(OUTPUTS)
 
+venv: $(VENV)
+
 $(OUTPUTS): $(SCRIPT) $(MASTER_DATA) iati-downloads/*.xml $(VENV)
 	. $(VENV) && mkdir -p outputs && time python $(SCRIPT) $(IATI_DATA)
 
