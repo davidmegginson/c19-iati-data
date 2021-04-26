@@ -36,6 +36,9 @@ dt {
 
 dd {
     grid-column: 2;
-    text-align: right;
     padding: 0.5rem 0;
 }
+
+dl.figures dd {
+    text-align: right;
+}    
