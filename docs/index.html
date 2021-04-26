@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>IATI C19 filtering demo</title>
+    <link rel="stylesheet" href="style.css"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <script src="lib/hxl.js"></script>
+    <script src="script.js" defer="defer"></script>
+  </head>
+  <body>
+    <h1>IATI C19 filtering demo</h1>
+    <section id="filters">
+      <h2>Filters</h2>
+      <form>
+        <label>
+          <span>Strict only?</span>
+          <input name="strict" id="form.strict" type="checkbox"/>
+        </label>
+        <label>
+          <span>Humanitarian only?</span>
+          <input name="humanitarian" id="form.humanitarian" type="checkbox"/>
+        </label>
+        <label>
+          <span>Org</span>
+          <select name="org" id="form.org">
+            <option>Loading...</option>
+          </select>
+        </label>
+        <label>
+          <span>Sector</span>
+          <select name="sector" id="form.sector">
+            <option>Loading...</option>
+          </select>
+        </label>
+        <label>
+          <span>Country</span>
+          <select name="country" id="form.country">
+            <option>Loading…</option>
+          </select>
+        </label>
+        <button type="submit">Update results</button>
+        <a class="reset" href="?org=*&amp;sector=*&amp;country=*">Reset</a>
+      </form>
+    </section>
+    <section id="results">
+      <h2>Results</h2>
+      <dl>
+        <dt>Matching orgs</dt>
+        <dd id="org_count">Loading…</dd>
+        <dt>Matching sectors</dt>
+        <dd id="sector_count">Loading…</dd>
+        <dt>Matching countries</dt>
+        <dd id="country_count">Loading…</dd>
+        <dt>Matching activities</dt>
+        <dd id="activity_count">Loading…</dd>
+        <dt>Net new commitments (USD)</dt>
+        <dd id="net_commitments">Loading…</dd>
+        <dt>Total commitments (USD)</dt>
+        <dd id="total_commitments">Loading…</dd>
+        <dt>Net new spending (USD)</dt>
+        <dd id="net_spending">Loading…</dd>
+        <dt>Total spending (USD)</dt>
+        <dd id="total_spending">Loading…</dd>
+      </dl>
+    </section>
+  </body>
+</html>

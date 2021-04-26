@@ -3,7 +3,9 @@ Also disaggregate by strict vs loose C19, and humanitarian status
 
 """
 
-import datetime, diterator, json, re, sys
+import csv, datetime, diterator, json, logging, re, sys
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 
 #
@@ -13,6 +15,10 @@ import datetime, diterator, json, re, sys
 COMMITMENTS_SPENDING_JSON = "outputs/commitments-spending.json"
 
 ACTIVITY_COUNTS_JSON = "outputs/activity-counts.json"
+
+TRANSACTIONS_JSON = "outputs/transactions.json"
+
+TRANSACTIONS_CSV = "outputs/transactions.csv"
 
 
 #
@@ -110,9 +116,8 @@ def get_country_name (code):
 
 def convert_to_usd (value, source_currency, isodate):
     # FIXME not using date
-    value = float(value)
     source_currency = source_currency.upper().strip()
-    if source_currency != "USD":
+    if value != 0.0 and source_currency != "USD":
         rates = load_json("data/fallbackrates.json")
         if source_currency in rates["rates"]:
             value /= rates["rates"][source_currency]
@@ -223,11 +228,9 @@ def process_activities (filenames):
 
     accumulators = dict()
 
-    activity_counts = {
-        "org": {},
-        "sector": {},
-        "country": {},
-    }
+    transactions = list()
+
+    activity_counts = dict()
 
     activities_seen = set()
 
@@ -390,14 +393,27 @@ def process_activities (filenames):
                             accumulators[key]["total"][type] += total_money
 
                             # register the activity with the org, sector, and country separately
-                            for key in ("org", "sector", "country",):
-                                activity_counts[key].setdefault((parts[key], is_humanitarian, is_strict,), set()).add(identifier)
+                            activity_counts.setdefault((org, parts["sector"], parts["country"], is_humanitarian, is_strict,), set()).add(identifier)
+
+                            # add to transactions
+                            transactions.append([
+                                parts["month"],
+                                parts["org"],
+                                parts["sector"],
+                                parts["country"],
+                                1 if parts["is_humanitarian"] else 0,
+                                1 if parts["is_strict"] else 0,
+                                type,
+                                identifier,
+                                net_money,
+                                total_money,
+                            ])
 
     #
     # Return the accumulators after processing all activities and transactions
     #
     
-    return (accumulators, activity_counts)
+    return (accumulators, activity_counts, transactions)
 
 
 #
@@ -416,17 +432,47 @@ def postprocess_accumulators (accumulators):
     return rows
 
 def postprocess_activity_counts (activity_counts):
-    result = {}
+    result = []
     for key in activity_counts.keys():
-        result[key] = []
-        for entry in sorted(activity_counts[key].keys()):
-            result[key].append({
-                key: entry[0],
-                "is_humanitarian": entry[1],
-                "is_strict": entry[2],
-                "activities": len(activity_counts[key][entry]),
-            })
+        result.append({
+            "org": key[0],
+            "sector": key[1],
+            "country": key[2],
+            "is_humanitarian": key[3],
+            "is_strict": key[4],
+            "activities": sorted(list(activity_counts[key])),
+        })
     return result
+
+def postprocess_transactions (transactions):
+    HEADERS = [
+        [
+            "Month",
+            "Org",
+            "Sector",
+            "Recipient country",
+            "Humanitarian?",
+            "Strict?",
+            "Transaction type",
+            "Activity id",
+            "Net money",
+            "Total money"
+        ],
+        [
+            "#date+month",
+            "#org",
+            "#sector",
+            "#country",
+            "#indicator+bool+humanitarian",
+            "#indicator+bool+strict",
+            "#x_transaction_type",
+            "#activity+code",
+            "#value+net",
+            "#value+total"
+        ],
+    ]
+    return HEADERS + transactions
+    
 
 #
 # Main entry point
@@ -435,7 +481,7 @@ def postprocess_activity_counts (activity_counts):
 if __name__ == "__main__":
 
     # Build the accumulators from the IATI activities and transactions
-    accumulators, activity_counts = process_activities(sys.argv[1:])
+    accumulators, activity_counts, transactions = process_activities(sys.argv[1:])
 
     # Dump the commitments and spending as JSON
     with open(COMMITMENTS_SPENDING_JSON, "w") as output:
@@ -444,5 +490,15 @@ if __name__ == "__main__":
     # Dump the activity counts as JSON
     with open(ACTIVITY_COUNTS_JSON, "w") as output:
         json.dump(postprocess_activity_counts(activity_counts), output, indent=4)
+
+    with open(TRANSACTIONS_JSON, "w") as output:
+        json.dump(postprocess_transactions(transactions), output)
+        print(len(transactions), "transactions", file=sys.stderr)
+
+    with open(TRANSACTIONS_CSV, "w") as output:
+        writer = csv.writer(output)
+        for row in postprocess_transactions(transactions):
+            # recast booleans as 1 or 0
+            writer.writerow(row)
 
 # end
