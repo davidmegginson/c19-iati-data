@@ -16,27 +16,27 @@
       <form>
         <label>
           <span>Strict only?</span>
-          <input name="strict" id="form.strict" type="checkbox"/>
+          <input name="strict" id="form.strict" type="checkbox" onchange="this.form.submit()"/>
         </label>
         <label>
           <span>Humanitarian only?</span>
-          <input name="humanitarian" id="form.humanitarian" type="checkbox"/>
+          <input name="humanitarian" id="form.humanitarian" type="checkbox" onchange="this.form.submit()"/>
         </label>
         <label>
           <span>Org</span>
-          <select name="org" id="form.org">
+          <select name="org" id="form.org" onchange="this.form.submit()">
             <option>Loading...</option>
           </select>
         </label>
         <label>
           <span>Sector</span>
-          <select name="sector" id="form.sector">
+          <select name="sector" id="form.sector" onchange="this.form.submit()">
             <option>Loading...</option>
           </select>
         </label>
         <label>
           <span>Country</span>
-          <select name="country" id="form.country">
+          <select name="country" id="form.country" onchange="this.form.submit()">
             <option>Loading…</option>
           </select>
         </label>
