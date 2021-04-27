@@ -46,6 +46,7 @@ function setupForm (data, params) {
     populateSelect("form.org", data.getValues("#org"), params.get("org"));
     populateSelect("form.sector", data.getValues("#sector"), params.get("sector"));
     populateSelect("form.country", data.getValues("#country"), params.get("country"));
+    populateSelect("form.month", data.getValues("#date+month"), params.get("month"));
 
     // Note: a more-clever version would show only the orgs, sectors,
     // or countries available with the current selections
@@ -53,9 +54,7 @@ function setupForm (data, params) {
 
 
 /**
- * Filter the data by org, sector, country, humanitarian, and strict
- *
- * (Could also do month, but we're not demoing that here)
+ * Filter the data by org, sector, country, month, humanitarian, and strict
  *
  * This function doesn't actually copy any data; it just constructs a
  * chain of filters that will be applied when it comes time to
@@ -65,22 +64,28 @@ function setupForm (data, params) {
 function filterData (data, params) {
     let result = data;
     
-    if (params.get("org") != "*") {
+    if (params.get("org") && params.get("org") != "*") {
         result = result.withRows({
             pattern: "#org",
             test: params.get("org")
         });
     }
-    if (params.get("sector") != "*") {
+    if (params.get("sector") && params.get("sector") != "*") {
         result = result.withRows({
             pattern: "#sector",
             test: params.get("sector")
         });
     }
-    if (params.get("country") != "*") {
+    if (params.get("country") && params.get("country") != "*") {
         result = result.withRows({
             pattern: "#country",
             test: params.get("country")
+        });
+    }
+    if (params.get("month") && params.get("month") != "*") {
+        result = result.withRows({
+            pattern: "#date+month",
+            test: params.get("month")
         });
     }
     if (params.get("humanitarian") == "on") {

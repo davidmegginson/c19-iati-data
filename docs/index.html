@@ -40,8 +40,14 @@
             <option>Loading…</option>
           </select>
         </label>
+        <label>
+          <span>Month</span>
+          <select name="month" id="form.month" onchange="this.form.submit()">
+            <option>Loading...</option>
+          </select>
+        </label>
         <button type="submit">Update results</button>
-        <a class="reset" href="?org=*&amp;sector=*&amp;country=*">Reset</a>
+        <a class="reset" href=".">Reset</a>
       </form>
     </section>
     <section id="results">
