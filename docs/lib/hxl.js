@@ -6,7 +6,8 @@
  * operations that are useful to support mapping and visualisation.
  *
  * @author David Megginson
- * @date Started 2015-02
+ * @date 2021-04-27
+ * @version 0.4
  */
 
 ////////////////////////////////////////////////////////////////////////
@@ -31,7 +32,9 @@ var hxl = {
     /**
      * List of attached loggers
      */
-    loggers: []
+    loggers: [],
+
+    version: "0.4"
 };
 
 /**
@@ -76,7 +79,8 @@ hxl.load = function (url, callback) {
                 callback(hxl.wrap(result.data));
             },
             error: result => {
-                throw new Error(result.errors.join("\n"));
+                console.error(result);
+                throw new Error(result);
             }
         });
     } else {
@@ -321,6 +325,10 @@ hxl.classes.Source.prototype.getColumns = undefined;
  * more-elegant way of iterating through rows, but this method makes
  * it easier to break out of the loop early.
  *
+ * Note: doesn't implement the full Javascript iteration protocol
+ * (which would mean returning an object with "value" and "done"
+ * properties).
+ *
  * @function
  * @return {object} An iterator object with a .next() method.
  * @see #getRows
@@ -488,11 +496,8 @@ hxl.classes.Source.prototype.getSum = function(pattern) {
     pattern = hxl.classes.TagPattern.parse(pattern); // more efficient to precompile
     while (row = iterator.next()) {
         value = row.get(pattern);
-        if (value !== null) {
-            num = parseFloat(value);
-            if (num !== NaN) {
-                result += value;
-            }
+        if (hxl.types.isNumber(value)) {
+            result += hxl.types.toNumber(value);
         }
     }
     return result;
@@ -516,17 +521,15 @@ hxl.classes.Source.prototype.getSum = function(pattern) {
  */
 hxl.classes.Source.prototype.getMin = function(pattern) {
     var min = null;
-    var row, value;
+    var row, value, num;
     var iterator = this.iterator();
     pattern = hxl.classes.TagPattern.parse(pattern); // more efficient to precompile
     while (row = iterator.next()) {
         value = row.get(pattern);
-        if (value !== null) {
-            num = parseFloat(value);
-            if (num !== NaN) {
-                if (min === null || value < min) {
-                    min = value;
-                }
+        if (hxl.types.isNumber(value)) {
+            num = hxl.types.toNumber(value);
+            if (min == null || num < min) {
+                min = num;
             }
         }
     }
@@ -550,17 +553,15 @@ hxl.classes.Source.prototype.getMin = function(pattern) {
  */
 hxl.classes.Source.prototype.getMax = function(pattern) {
     var max = null;
-    var row, value;
+    var row, value, num;
     var iterator = this.iterator();
     pattern = hxl.classes.TagPattern.parse(pattern); // more efficient to precompile
     while (row = iterator.next()) {
         value = row.get(pattern);
-        if (value !== null) {
-            num = parseFloat(value);
-            if (num !== NaN) {
-                if (max === null || value > max) {
-                    max = value;
-                }
+        if (hxl.types.isNumber(value)) {
+            num = hxl.types.toNumber(value);
+            if (max == null || num > max) {
+                max = num;
             }
         }
     }
@@ -697,7 +698,7 @@ hxl.classes.Source.prototype.isNumbery = function(pattern) {
         var value = row.get(pattern);
         if (value) {
             totalSeen++;
-            if (!isNaN(value)) {
+            if (hxl.types.isNumber(value)) {
                 numericSeen++;
             }
         }
@@ -827,6 +828,45 @@ hxl.classes.Source.prototype.count = function(patterns, aggregate) {
  */
 hxl.classes.Source.prototype.rename = function(pattern, newTag, newHeader, index) {
     return new hxl.classes.RenameFilter(this, pattern, newTag, newHeader, index);
+}
+
+/**
+ * Sort the dataset.
+ *
+ * <pre>
+ * var filtered = data.sort('#affected');
+ * </pre>
+ *
+ * @param {string} patterns The tag patterns to use as sort keys.
+ * @param {boolean} reverse If true, reverse the sort order.
+ * @return {hxl.classes.Source} A new data source, sorted.
+ * @see hxl.classes.SortFilter
+ */
+hxl.classes.Source.prototype.sort = function(patterns, reverse) {
+    return new hxl.classes.SortFilter(this, patterns, reverse);
+}
+
+/**
+ * Show a preview of the first few rows of a dataset.
+ *
+ * Use this to change around tags and attributes. For example, you
+ * could change the first instance of #org to #org+funder to make the
+ * data easier to filter later:
+ *
+ * <pre>
+ * var filtered = data.rename('#org', '#org+funder', 'Donor', 0);
+ * </pre>
+ *
+ * @param {string} pattern The tag pattern to match for replacement.
+ * See {@link hxl.classes.TagPattern#parse} for details.
+ * @param newTag the new HXL tag spec (e.g. "#adm1+code"). See {@link
+ * hxl.classes.Column#parse} for details.
+ * @param {int} index maximum number of rows to return (defaults to 10).
+ * @return {hxl.classes.Source} A new data source, with matching column(s) replaced.
+ * @see hxl.classes.PreviewFilter
+ */
+hxl.classes.Source.prototype.preview = function(maxRows) {
+    return new hxl.classes.PreviewFilter(this, maxRows);
 }
 
 /**
@@ -1221,6 +1261,29 @@ hxl.classes.TagPattern.parse = function(pattern, useException) {
             return null;
         }
     }
+}
+
+/**
+ * Parse a string into a tag pattern.
+ *
+ * <pre>
+ * var pattern = hxl.classes.TagPattern.parse('#org+funder-impl');
+ * </pre>
+ *
+ * It is safe to pass an already-compiled {@link hxl.classes.TagPattern}
+ * to this method; it will simple be returned as-is.
+ *
+ * @param {string} pattern a tag-pattern string, like "#org+funder-impl"
+ * @param useException (optional) throw an exception on failure.
+ * @return a hxl.classes.TagPattern, or null if parsing fails (and useException is false).
+ */
+hxl.classes.TagPattern.parseList = function(patterns, useException) {
+    if (patterns == null) {
+        patterns = [];
+    } else if (!Array.isArray(patterns)) {
+        patterns = [ patterns ];
+    }
+    return patterns.map(pattern => { return hxl.classes.TagPattern.parse(pattern, useException); });
 }
 
 hxl.classes.TagPattern.toString = function() {
@@ -1637,14 +1700,7 @@ hxl.classes.ColumnFilter.prototype._compilePatterns = function (patterns) {
  */
 hxl.classes.CountFilter = function (source, patterns, aggregate) {
     hxl.classes.BaseFilter.call(this, source);
-    if (patterns) {
-        if (!Array.isArray(patterns)) {
-            patterns = [ patterns ];
-        }
-        this.patterns = patterns.map(pattern => { return hxl.classes.TagPattern.parse(pattern, true); });
-    } else {
-        throw new Error("No tag patterns specified");
-    }
+    this.patterns = hxl.classes.TagPattern.parseList(patterns, true);
     if (aggregate) {
         this.aggregate = hxl.classes.TagPattern.parse(aggregate, true);
     } else {
@@ -1740,8 +1796,9 @@ hxl.classes.CountFilter.prototype._aggregateData = function() {
         // Aggregate numeric values if requested
         if (this.aggregate) {
             // try parsing, and proceed only if it's numeric
-            value = parseFloat(row.get(this.aggregate));
-            if (!isNaN(value)) {
+            value = row.get(this.aggregate);
+            if (hxl.types.isNumber(value)) {
+                value = hxl.types.toNumber(value);
                 entry = dataMap[rowInfo.key].aggregates;
                 if (entry) {
                     // Not the first value
@@ -1894,6 +1951,118 @@ hxl.classes.RenameFilter.prototype.iterator = function () {
                 row = new hxl.classes.Row(row.values, outer.getColumns());
             }
             return row;
+        }
+    };
+}
+
+
+////////////////////////////////////////////////////////////////////////
+// hxl.classes.SortFilter
+////////////////////////////////////////////////////////////////////////
+
+/**
+ * HXL filter to sort a dataset by one or more columns
+ *
+ * @constructor
+ * @param source the hxl.classes.Source
+ * @param patterns the tag patterns to sort by
+ * @param reverse if true, reverse the sort direction
+ */
+hxl.classes.SortFilter = function(source, patterns, maxRows) {
+    hxl.classes.BaseFilter.call(this, source);
+    this.patterns = hxl.classes.TagPattern.parseList(patterns);
+    this.maxRows = maxRows == null ? 10 : maxRows;
+}
+
+hxl.classes.SortFilter.prototype = Object.create(hxl.classes.BaseFilter.prototype);
+hxl.classes.SortFilter.prototype.constructor = hxl.classes.SortFilter;
+
+hxl.classes.SortFilter.prototype.getSortColumnIndices = function () {
+    var indices = [];
+    this.patterns.forEach(pattern => {
+        for (var i = 0; i < this.columns.length; i++) {
+            if (pattern.match(this.columns[i])) {
+                indices.push(i);
+            }
+        }
+    });
+    return indices;
+};
+
+hxl.classes.SortFilter.prototype.compareRows = function (row1, row2, sortIndices) {
+    var values1 = row1.values;
+    var values2 = row2.values;
+    for (var i = 0; i < sortIndices.length; i++) {
+        var index = sortIndices[i];
+        var v1 = index < values1.length ? values1[index] : null;
+        var v2 = index < values2.length ? values2[index] : null;
+        if (hxl.types.isNumber(v1) && hxl.types.isNumber(v2)) {
+            v1 = hxl.types.toNumber(v1);
+            v2 = hxl.types.toNumber(v2);
+        }
+        if (v1 < v2) {
+            return this.reverse ? 1 : -1;
+        } else if (v1 > v2) {
+            return this.reverse ? -1 : 1;
+        }
+    }
+    return 0;
+};
+
+/**
+ * Return the number of rows selected.
+ *
+ * @return {fobject} A new row iterator, with a next() method.
+ */
+hxl.classes.SortFilter.prototype.iterator = function () {
+    var indices = this.getSortColumnIndices();
+    var rows = this.source.getRows().sort((a, b) => {
+        return this.compareRows(a, b, indices);
+    });
+    var pos = 0;
+    return {
+        next: () => {
+            return pos < rows.length ? rows[pos++] : null;
+        }
+    }
+};
+
+////////////////////////////////////////////////////////////////////////
+// hxl.classes.PreviewFilter
+////////////////////////////////////////////////////////////////////////
+
+/**
+ * HXL filter to rename a column (new header and tag).
+ *
+ * @constructor
+ * @param source the hxl.classes.Source
+ * @param maxRows the maximum number of rows to return (if undefined, return 10)
+ */
+hxl.classes.PreviewFilter = function(source, maxRows) {
+    hxl.classes.BaseFilter.call(this, source);
+    this.maxRows = maxRows == null ? 10 : maxRows;
+}
+
+hxl.classes.PreviewFilter.prototype = Object.create(hxl.classes.BaseFilter.prototype);
+hxl.classes.PreviewFilter.prototype.constructor = hxl.classes.PreviewFilter;
+
+/**
+ * Return the number of rows selected.
+ *
+ * @returnn {fobject} A new row iterator, with a next() method.
+ */
+hxl.classes.PreviewFilter.prototype.iterator = function () {
+    var iterator = this.source.iterator();
+    var outer = this;
+    var rowCounter = 0;
+    return {
+        next: function() {
+            if (rowCounter >= outer.maxRows) {
+                return null;
+            } else {
+                rowCounter++;
+                return iterator.next();
+            }
         }
     };
 }
