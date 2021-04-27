@@ -157,6 +157,37 @@ function showResults(data, params) {
     setResult("total_spending", spending.getSum("#value+total"));
 }
 
+/**
+ * Show the top-10 lists
+ */
+function showTopLists (data) {
+
+    function populateList (id, data, entityPattern, valuePattern) {
+        let listNode = document.getElementById(id);
+
+        // We're already filtered to type "spending". Here's the rest of the pipeline:
+        // .count() totals for the tag pattern provided (e.g. #org) and number (e.g. #value.net)
+        // .sort() by the sums, descending
+        // .preview() just the top 10 results
+        let rows = spendingData.count(entityPattern, valuePattern).sort("#value+sum", true).preview(10).rows;
+        listNode.innerHTML = "";
+        rows.forEach(row => {
+            let itemNode = document.createElement("li");
+            itemNode.textContent = row.get(entityPattern) + " - USD " + row.get("#value+sum").toLocaleString();
+            listNode.appendChild(itemNode);
+        });
+    }
+
+    // First, filter for only spending (we're not counting commitments)
+    let spendingData = data.withRows("x_transaction_type=spending");
+
+    // Next, specify what to count for each country
+    populateList("top.orgs", spendingData, "#org", "#value+total");
+    populateList("top.sectors", spendingData, "#sector", "#value+net");
+    populateList("top.countries", spendingData, "#country", "#value+net");
+
+}
+
 //
 // Main entry point
 // First, download transactions.json, then set things moving
@@ -178,5 +209,8 @@ fetch("data/transactions.json").then(response => {
 
         // Show the results in the HTML page
         showResults(filteredData, params);
+
+        // Show the top 10 lists in the HTML page
+        showTopLists(filteredData);
     });
 });

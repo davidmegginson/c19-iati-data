@@ -39,3 +39,12 @@ dd {
     padding: 0.5rem 0;
 }
 
+.items {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: start;
+}
+
+.items .item {
+    margin: 0 1rem 1rem 1rem;
+}
