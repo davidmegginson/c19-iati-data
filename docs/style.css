@@ -19,7 +19,7 @@ label span {
 
 dl {
     display: grid;
-    grid-template-columns: 15rem 10rem;
+    grid-template-columns: 15rem auto;
 }
 
 dt, label span {
@@ -39,6 +39,3 @@ dd {
     padding: 0.5rem 0;
 }
 
-dl.figures dd {
-    text-align: right;
-}    
