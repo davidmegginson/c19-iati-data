@@ -12,13 +12,36 @@ logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 # Constants
 #
 
-COMMITMENTS_SPENDING_JSON = "outputs/commitments-spending.json"
-
-ACTIVITY_COUNTS_JSON = "outputs/activity-counts.json"
-
 TRANSACTIONS_JSON = "outputs/transactions.json"
 
 TRANSACTIONS_CSV = "outputs/transactions.csv"
+
+TRANSACTION_HEADERS = [
+    [
+        "Month",
+        "Org",
+        "Sector",
+        "Recipient country",
+        "Humanitarian?",
+        "Strict?",
+        "Transaction type",
+        "Activity id",
+        "Net money",
+        "Total money"
+    ],
+    [
+        "#date+month",
+        "#org",
+        "#sector",
+        "#country",
+        "#indicator+bool+humanitarian",
+        "#indicator+bool+strict",
+        "#x_transaction_type",
+        "#activity+code",
+        "#value+net",
+        "#value+total"
+    ],
+]
 
 
 #
@@ -49,27 +72,6 @@ def clean_string (s):
     s = re.sub(r'^\W*(\w.*)\W*$', r'\1', s)
     s = re.sub(r'\s+', ' ', s)
     return s.strip()
-
-def pack_key (parts):
-    return (
-        parts["month"],
-        parts["org"],
-        parts["country"],
-        parts["sector"],
-        parts["is_humanitarian"],
-        parts["is_strict"],
-    )
-
-def unpack_key (key):
-    return {
-        "month": key[0],
-        "org": key[1],
-        "country": key[2],
-        "sector": key[3],
-        "is_humanitarian": key[4],
-        "is_strict": key[5],
-    }
-
 
 #
 # Lookup functions
@@ -130,10 +132,11 @@ def convert_to_usd (value, source_currency, isodate):
 # Business-logic functions
 #
 
-def make_country_splits(entity, default_country="XX"):
+def make_country_splits(entity, default_splits=None, default_country="XX"):
     """ Generate recipient-country splits by percentage for an activity or transaction
     FIXME - if there's no percentage for a country, default to 100% (could overcount)
     If there are no countries, assign 1.0 (100%) to the default provided.
+    If default splits are provided (e.g. for an activity), use those.
 
     """
     splits = {}
@@ -141,10 +144,19 @@ def make_country_splits(entity, default_country="XX"):
         code = country.code
         if code:
             splits[code.upper()] = float(country.percentage if country.percentage else 100.0) / 100.0
-    return splits if splits else { default_country: 1.0 }
+            
+    if splits:
+        # we have actual splits to return
+        return splits
+    elif default_splits is not None:
+        # return the default splits
+        return default_splits
+    else:
+        # default to 100% for unknown country
+        return { default_country: 1.0 }
 
 
-def make_sector_splits(entity, default_sector="99999"):
+def make_sector_splits(entity, default_splits=None, default_sector="99999"):
     """ Generate sector splits by percentage for an activity or transaction
     FIXME - if there's no percentage for a sector, default to 100% (could overcount)
     If there are no sectors, assign 1.0 (100%) to the default provided.
@@ -163,7 +175,15 @@ def make_sector_splits(entity, default_sector="99999"):
         if sector.vocabulary == vocabulary_code and code:
             splits[code.upper()] = float(sector.percentage if sector.percentage else 100.0) / 100.0
             
-    return splits if splits else { default_sector: 1.0 }
+    if splits:
+        # we have actual splits to return
+        return splits
+    elif default_splits is not None:
+        # return the default splits
+        return default_splits
+    else:
+        # default to 100% for unknown sector
+        return { default_sector: 1.0 }
 
 
 def has_c19_scope (scopes):
@@ -226,11 +246,7 @@ def sum_transactions (transactions, types):
 
 def process_activities (filenames):
 
-    accumulators = dict()
-
     transactions = list()
-
-    activity_counts = dict()
 
     activities_seen = set()
 
@@ -239,27 +255,17 @@ def process_activities (filenames):
     for filename in filenames:
         for activity in diterator.XMLIterator(filename):
 
-            #
             # Don't use the same activity twice
-            #
-
             identifier = activity.identifier
-            
             if identifier in activities_seen:
                 continue
             activities_seen.add(identifier)
 
-            #
-            # Get the org name and C19 strictness (at activity level)
-            #
-            
+            # Get the reporting-org name and C19 strictness at activity level
             org = get_org_name(activity.reporting_org)
             activity_strict = is_activity_strict(activity)
 
-            #
             # Figure out default country/sector percentage splits at the activity level
-            #
-            
             activity_country_splits = make_country_splits(activity)
             activity_sector_splits = make_sector_splits(activity)
 
@@ -301,23 +307,15 @@ def process_activities (filenames):
 
             for transaction in activity.transactions:
 
-                #
                 # Skip transactions with no values, or with out-of-range months
-                #
-
                 month = transaction.date[:7]
-                if month < "2020-01" or month > this_month:
+                if month < "2020-01" or month > this_month or transaction.value is None:
                     continue
-                
-                if transaction.value is None:
-                    continue
-                else:
-                    value = convert_to_usd(transaction.value, transaction.currency, transaction.date)
 
-                #
+                # Convert to USD
+                value = convert_to_usd(transaction.value, transaction.currency, transaction.date)
+
                 # Set the factors based on the type (commitments or spending)
-                #
-                
                 if transaction.type == "2":
                     # outgoing commitment
                     type = "commitments"
@@ -330,36 +328,17 @@ def process_activities (filenames):
                     # if it's anything else, skip it
                     continue
 
+                # transaction status defaults to activity
                 is_humanitarian = activity.humanitarian or transaction.humanitarian
                 is_strict = activity_strict or is_transaction_strict(transaction)
 
-                #
-                # Values that go into the unique key
-                #
-                
-                parts = {
-                    "month": month,
-                    "org": org,
-                    "country": None,
-                    "sector": None,
-                    "is_humanitarian": is_humanitarian,
-                    "is_strict": is_strict,
-                }
-                    
-
-                #
                 # Make the splits for the transaction (default to activity splits)
-                #
-                
-                country_splits = make_country_splits(transaction)
-                sector_splits = make_sector_splits(transaction)
+                country_splits = make_country_splits(transaction, activity_country_splits)
+                sector_splits = make_sector_splits(transaction, activity_sector_splits)
 
 
-                #
                 # Apply the country and sector percentage splits to the transaction
-                # We may end up with multiple entries
-                #
-
+                # generate multiple split transactions
                 for country, country_percentage in country_splits.items():
                     for sector, sector_percentage in sector_splits.items():
 
@@ -367,112 +346,24 @@ def process_activities (filenames):
                         total_money = int(round(value * country_percentage * sector_percentage))
 
                         # Fill in only if we end up with a non-zero value
-                        if net_money or total_money:
-
-                            # Fill in remaining parts for the key
-                            parts["country"] = get_country_name(country)
-                            parts["sector"] = get_sector_group_name(sector) # it doesn't matter if we get the same one more than once
-                            key = pack_key(parts)
-
-                            # Add a default entry if it doesn't exist yet
-                            accumulators.setdefault(key, {
-                                "net": {
-                                    "commitments": 0,
-                                    "spending": 0,
-                                },
-                                "total": {
-                                    "commitments": 0,
-                                    "spending": 0,
-                                }
-                            })
-
-                            # Add the money to the accumulators
-                            # FIXME: will double-count activities if the strict or humanitarian status of individual
-                            # transactions differs in the same activity
-                            accumulators[key]["net"][type] += net_money
-                            accumulators[key]["total"][type] += total_money
-
-                            # register the activity with the org, sector, and country separately
-                            activity_counts.setdefault((org, parts["sector"], parts["country"], is_humanitarian, is_strict,), set()).add(identifier)
+                        if net_money != 0 or total_money != 0:
 
                             # add to transactions
                             transactions.append([
-                                parts["month"],
-                                parts["org"],
-                                parts["sector"],
-                                parts["country"],
-                                1 if parts["is_humanitarian"] else 0,
-                                1 if parts["is_strict"] else 0,
+                                month,
+                                org,
+                                get_sector_group_name(sector),
+                                get_country_name(country),
+                                1 if is_humanitarian else 0,
+                                1 if is_strict else 0,
                                 type,
                                 identifier,
                                 net_money,
                                 total_money,
                             ])
 
-    #
-    # Return the accumulators after processing all activities and transactions
-    #
-    
-    return (accumulators, activity_counts, transactions)
+    return transactions
 
-
-#
-# Postprocessing
-#
-
-def postprocess_accumulators (accumulators):
-    """ Unpack the accumulators into a usable data structure """
-    rows = []
-    for key in sorted(accumulators.keys()):
-        value = accumulators[key]
-        parts = unpack_key(key)
-        parts["net"] = accumulators[key]["net"]
-        parts["total"] = accumulators[key]["total"]
-        rows.append(parts)
-    return rows
-
-def postprocess_activity_counts (activity_counts):
-    result = []
-    for key in activity_counts.keys():
-        result.append({
-            "org": key[0],
-            "sector": key[1],
-            "country": key[2],
-            "is_humanitarian": key[3],
-            "is_strict": key[4],
-            "activities": sorted(list(activity_counts[key])),
-        })
-    return result
-
-def postprocess_transactions (transactions):
-    HEADERS = [
-        [
-            "Month",
-            "Org",
-            "Sector",
-            "Recipient country",
-            "Humanitarian?",
-            "Strict?",
-            "Transaction type",
-            "Activity id",
-            "Net money",
-            "Total money"
-        ],
-        [
-            "#date+month",
-            "#org",
-            "#sector",
-            "#country",
-            "#indicator+bool+humanitarian",
-            "#indicator+bool+strict",
-            "#x_transaction_type",
-            "#activity+code",
-            "#value+net",
-            "#value+total"
-        ],
-    ]
-    return HEADERS + transactions
-    
 
 #
 # Main entry point
@@ -481,24 +372,20 @@ def postprocess_transactions (transactions):
 if __name__ == "__main__":
 
     # Build the accumulators from the IATI activities and transactions
-    accumulators, activity_counts, transactions = process_activities(sys.argv[1:])
+    transactions = process_activities(sys.argv[1:])
 
-    # Dump the commitments and spending as JSON
-    with open(COMMITMENTS_SPENDING_JSON, "w") as output:
-        json.dump(postprocess_accumulators(accumulators), output, indent=4)
+    # Add headers and sort the transactions.
+    transactions = TRANSACTION_HEADERS + sorted(transactions)
 
-    # Dump the activity counts as JSON
-    with open(ACTIVITY_COUNTS_JSON, "w") as output:
-        json.dump(postprocess_activity_counts(activity_counts), output, indent=4)
-
+    # Write the JSON
     with open(TRANSACTIONS_JSON, "w") as output:
-        json.dump(postprocess_transactions(transactions), output)
+        json.dump(transactions, output)
         print(len(transactions), "transactions", file=sys.stderr)
 
+    # Write the CSV
     with open(TRANSACTIONS_CSV, "w") as output:
         writer = csv.writer(output)
-        for row in postprocess_transactions(transactions):
-            # recast booleans as 1 or 0
+        for row in transactions:
             writer.writerow(row)
 
 # end
