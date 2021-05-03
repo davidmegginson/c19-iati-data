@@ -84,7 +84,6 @@ Total money | #value+total | integer | _Total_ money in the commitment or spendi
 -- | -- | -- | -- | -- | -- | -- | -- | -- | --
 2020-01 | AECID Spanish Agency for International Development Cooperation | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 36599 | 36599
 2020-01 | AECID Spanish Agency for International Development Cooperation | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 48799 | 48799
-2020-01 | AECID Spanish Agency for International Development Cooperation | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-D
 
 ## License
 
