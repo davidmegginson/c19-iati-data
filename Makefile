@@ -23,7 +23,7 @@ clean:
 	rm -rf venv $(OUTPUT_DIR)/* $(DOWNLOAD_DIR)
 
 $(OUTPUT_TIMESTAMP): generate-data.py $(MASTER_DATA) $(IATI_DATA) $(VENV)
-	. $(VENV) && mkdir -p outputs && time python generate-data.py $(OUTPUT_DIR) $(IATI_DATA) && touch $(OUTPUT_TIMESTAMP)
+	. $(VENV) && mkdir -p $(OUTPUT_DIR) && time python generate-data.py $(OUTPUT_DIR) $(IATI_DATA) && touch $(OUTPUT_TIMESTAMP)
 
 $(VENV): requirements.txt
 	(python3 -m venv venv && . $(VENV) && pip install --no-cache-dir -r requirements.txt) || rm -rf venv

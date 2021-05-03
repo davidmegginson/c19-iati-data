@@ -1,127 +1,90 @@
 COVID-19 IATI data
 ==================
 
-Extract commitment, spending, and financial-flow data from IATI for the international COVID-19 response.
+Extract commitment and spending data from IATI.
 
 ## Usage
 
-You must first create a directory iati-downloads/ and download all of the relevant IATI data into it. The files should be named activities-1.xml, activities-2.xml, etc.
-
-(TODO: add a script to download the data from D-Portal)
-
-Next, create a Python3 virtual environment and install the prerequisites:
-
-```
-$ python3 -m venv venv
-$ . venv/bin/activate && pip install -r requirements.txt
-```
-
-Finally, create the directory outputs/ if it doesn't already exist, then run the Python script inside the virtual environment to generate the output data:
-
-```
-(venv)$ mkdir -p outputs && python generate-data.py iati-downloads/activities*.xml
-```
-
-After running (which will take a few minutes), the outputs/ directory will contain the following JSON files:
-
-``outputs/activity-counts.json`` - total activities for each org, sector, and country.
-
-``outputs/commitments-spending.json`` - commitments and spending, broken down by month, org, sector, country, humanitarian status, and strict/loose COVID-19 matching
-
-Alternatively, you can perform all of these steps except the initial IATI data download automatically, using the enclosed Makefile:
+You can run the whole process by simply invoking
 
 ```
 $ make all
 ```
 
-To remove generated files and the virtual environment, use
+or, if you prefer, execute the steps individually as shown below.
+
+### Create and activate a Python3 virtual environment
 
 ```
-$ make clean
+$ make create-venv
 ```
 
-## Output formats
-
-### Activity counts
-
-The file ``outputs/activity-counts.json`` consists of three top-level sections:
+…or…
 
 ```
-{
-    "org": [ ... ],
-    "sector": [ ... ],
-    "country": [ ... ]
-}
+$ python3 -m venv venv
+$ . venv/bin/activate
+(venv)$ pip install -r requirements.txt
 ```
 
-Within each section is a list of JSON objects that look like this:
+### Download IATI data
 
 ```
-{
-    "org": "New Zealand Ministry of Foreign Affairs and Trade",
-    "is_humanitarian": false,
-    "is_strict": false,
-    "activities": 9
-}
+(venv)$ make download-iata
 ```
 
-(The first property will be "sector" or "country" rather than "org", depending on the section.)
-
-``is_humanitarian`` - true if these are activities specifically flagged as humanitarian; false otherwise
-
-``is_strict`` - true if these are activities that pass a strict test for relevance to COVID-19; false if they pass only a looser test
-
-``activities`` - the total number of activities for the org, sector, or country that match the _is\_strict_ and _is\_humanitarian_ values
-
-
-### Commitments and spending
-
-The file ``outputs/commitments-spending.json`` is a list of JSON objects that look like this:
+…or…
 
 ```
-{
-    "month": "2020-03",
-    "org": "U.S. Agency for International Development",
-    "country": "Afghanistan",
-    "sector": "Agriculture, Forestry, Fishing",
-    "is_humanitarian": false,
-    "is_strict": false,
-    "net": {
-        "commitments": 0,
-        "spending": 2311832
-    },
-    "total": {
-        "commitments": 0,
-        "spending": 2311832
-    }
-}
+(venv)$ rm -rf iati-downloads
+(venv)$ mkdir iati-downloads
+(venv)$ python3 download-iata.py docs/data
 ```
 
-Each object is a breakdown of commitments and spending for each unique combination of the following independent variables:
+### Generate output
 
-``month`` - the month in which the money was reported, in ISO YYYY-MM format.
+```
+$ make generate-output
+```
 
-``org`` - the name of the reporting organisation
+…or…
 
-``country`` - the name of the recipient country
+```
+(venv)$ mkdir -p docs/data
+(venv)$ python3 generate-data.py docs/data iati-downloads/*.xml
+```
 
-``sector`` - the name of the sector to which the money applies
+## Outputs
 
-``is_humanitarian`` - true if this money was specifically flagged as humanitarian; false otherwise
+After running (which will take a few minutes), the docs/data/ directory will contain the following JSON files:
 
-``is_strict`` - true if this money passes a stricter test for relevance to COVID-19; false if it passes only a looser test
+``transactions.json`` - a list of transactions in row-oriented JSON
+``transactions.csv`` - a list of transactions in CSV format
 
-The dependent variables are different financial amounts, in US dollars (USD):
+### Transactions
 
-``net`` - estimated _new_ money, excluding that received from another activity or organisation)
+The transactions are split by recipient country and sector, and all values are converted to USD.  For example, if a transaction or activity has 3 recipient countries and three sectors, it will result in 9 rows in the transactions table. The table has the following columns:
 
-``total`` - estimated total money reported, including that received from another activity or organisation
+Name | HXL hashtag | Type | Description
+-- | -- | -- | -- 
+Month | #date+month | string | Transaction month in YYYY-MM format
+Org | #org | string | A normalised name for the reporting organisation
+Sector | #sector | string | An OECD-DAC sector grouping (higher-level than the purpose codes)
+Country | #country | string | The recipient country name
+Humanitarian | #indicator+bool+humanitarian | integer | 1 if the transaction is humanitarian, 0 otherwise
+Strict | #indicator+bool+strict | integer | 1 if the transaction strictly meets the IATI COVID-19 guidance, 0 if it is only a loose match
+Transaction type | #x_transaction_type | string | "commitments" or "spending"
+Activity id | #activity+code | string | The IATI identifier for the transactions activity
+Net money | #value+net | integer | _New_ money in the commitment or spending, after deduplication, in USD.
+Total money | #value+total | integer | _Total_ money in the commitment or spending, without deduplication, in USD.
 
-Inside each of those are two different categories of outgoing money:
+#### Transactions example
 
-``commitments`` - estimated amount legally commited, in USD dollars
-
-``spending`` - estimated disbursements and expenses, in USD dollars
+#date+month | #org | #sector | #country | #indicator+bool+humanitarian | #indicator+bool+strict | #x_transaction_type | #activity+code | #value+net | #value+total
+-- | -- | -- | -- | -- | -- | -- | -- | -- | --
+2020-01 | AECID Spanish Agency for International Development Cooperation | "Agriculture |  Forestry |  Fishing" | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 36599 | 36599
+2020-01 | AECID Spanish Agency for International Development Cooperation | "Agriculture |  Forestry |  Fishing" | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 48799 | 48799
+2020-01 | AECID Spanish Agency for International Development Cooperation | "Agriculture |  Forestry |  Fishing" | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-D
 
 ## License
 
