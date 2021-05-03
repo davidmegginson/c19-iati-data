@@ -3,18 +3,18 @@ Also disaggregate by strict vs loose C19, and humanitarian status
 
 """
 
-import csv, datetime, diterator, json, logging, re, sys
+import datetime, diterator, logging, re, sys
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 #
 # Constants
 #
 
-TRANSACTIONS_JSON = "outputs/transactions.json"
+TRANSACTIONS_JSON = "transactions.json"
 
-TRANSACTIONS_CSV = "outputs/transactions.csv"
+TRANSACTIONS_CSV = "transactions.csv"
 
 TRANSACTION_HEADERS = [
     [
@@ -366,24 +366,35 @@ def process_activities (filenames):
 
 
 #
-# Main entry point
+# Main entry point for script
 #
 
 if __name__ == "__main__":
 
+    import json, csv, os.path
+
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+
+    if len(sys.argv) < 3:
+        print("Usage: python3 generate-data.py <output-dir> <xml-file ...>", file=sys.stderr)
+        exit(2)
+
+    output_dir = sys.argv[1]
+    logger.info("Writing output to directory %s", output_dir)
+
     # Build the accumulators from the IATI activities and transactions
-    transactions = process_activities(sys.argv[1:])
+    transactions = process_activities(sys.argv[2:])
+    logger.info("Processed %d transactions", len(transactions))
 
     # Add headers and sort the transactions.
     transactions = TRANSACTION_HEADERS + sorted(transactions)
 
     # Write the JSON
-    with open(TRANSACTIONS_JSON, "w") as output:
+    with open(os.path.join(output_dir, TRANSACTIONS_JSON), "w") as output:
         json.dump(transactions, output)
-        print(len(transactions), "transactions", file=sys.stderr)
 
     # Write the CSV
-    with open(TRANSACTIONS_CSV, "w") as output:
+    with open(os.path.join(output_dir, TRANSACTIONS_CSV), "w") as output:
         writer = csv.writer(output)
         for row in transactions:
             writer.writerow(row)
