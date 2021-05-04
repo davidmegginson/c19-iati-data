@@ -82,7 +82,7 @@ Total money | #value+total | integer | _Total_ money in the commitment or spendi
 #### Transactions example
 
 #date+month | #org+name | #org+type | #sector | #country | #indicator+bool+humanitarian | #indicator+bool+strict | #x_transaction_type | #activity+code | #value+net | #value+total
--- | -- | -- | -- | -- | -- | -- | -- | -- | --
+-- | -- | -- | -- | -- | -- | -- | -- | -- | -- | --
 2020-01 | AECID Spanish Agency for International Development Cooperation | 10 | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 36599 | 36599
 2020-01 | AECID Spanish Agency for International Development Cooperation | 10 | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 48799 | 48799
 
