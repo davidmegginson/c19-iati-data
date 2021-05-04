@@ -43,7 +43,7 @@ function setupForm (data, params) {
     //
     // Populate the select form fields
     //
-    populateSelect("form.org", data.getValues("#org"), params.get("org"));
+    populateSelect("form.org", data.getValues("#org+name"), params.get("org"));
     populateSelect("form.sector", data.getValues("#sector"), params.get("sector"));
     populateSelect("form.country", data.getValues("#country"), params.get("country"));
     populateSelect("form.month", data.getValues("#date+month"), params.get("month"));
@@ -66,7 +66,7 @@ function filterData (data, params) {
     
     if (params.get("org") && params.get("org") != "*") {
         result = result.withRows({
-            pattern: "#org",
+            pattern: "#org+name",
             test: params.get("org")
         });
     }
@@ -125,7 +125,7 @@ function showResults(data, params) {
     //
 
     // Number of unique orgs
-    setResult("org_count", data.getValues("#org").length);
+    setResult("org_count", data.getValues("#org+name").length);
 
     // Number of unique sectors
     setResult("sector_count", data.getValues("#sector").length);
@@ -166,7 +166,7 @@ function showTopLists (data) {
         let listNode = document.getElementById(id);
 
         // We're already filtered to type "spending". Here's the rest of the pipeline:
-        // .count() totals for the tag pattern provided (e.g. #org) and number (e.g. #value.net)
+        // .count() totals for the tag pattern provided (e.g. #org+name) and number (e.g. #value.net)
         // .sort() by the sums, descending
         // .preview() just the top 10 results
         let rows = spendingData.count(entityPattern, valuePattern).sort("#value+sum", true).preview(10).rows;
@@ -182,7 +182,7 @@ function showTopLists (data) {
     let spendingData = data.withRows("x_transaction_type=spending");
 
     // Next, specify what to count for each country
-    populateList("top.orgs", spendingData, "#org", "#value+total");
+    populateList("top.orgs", spendingData, "#org+name", "#value+total");
     populateList("top.sectors", spendingData, "#sector", "#value+net");
     populateList("top.countries", spendingData, "#country", "#value+net");
 
