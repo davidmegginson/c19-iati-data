@@ -68,7 +68,8 @@ The transactions are split by recipient country and sector, and all values are c
 Name | HXL hashtag | Type | Description
 -- | -- | -- | -- 
 Month | #date+month | string | Transaction month in YYYY-MM format
-Org | #org | string | A normalised name for the reporting organisation
+Reporting org | #org+name | string | A normalised name for the reporting organisatio
+Reporting org type | #org+type | string | (Not used in the viz.) The organisation type, from https://iatistandard.org/en/iati-standard/203/codelists/organisationtype/
 Sector | #sector | string | An OECD-DAC sector grouping (higher-level than the purpose codes)
 Country | #country | string | The recipient country name
 Humanitarian | #indicator+bool+humanitarian | integer | 1 if the transaction is humanitarian, 0 otherwise
@@ -80,10 +81,10 @@ Total money | #value+total | integer | _Total_ money in the commitment or spendi
 
 #### Transactions example
 
-#date+month | #org | #sector | #country | #indicator+bool+humanitarian | #indicator+bool+strict | #x_transaction_type | #activity+code | #value+net | #value+total
+#date+month | #org+name | #org+type | #sector | #country | #indicator+bool+humanitarian | #indicator+bool+strict | #x_transaction_type | #activity+code | #value+net | #value+total
 -- | -- | -- | -- | -- | -- | -- | -- | -- | --
-2020-01 | AECID Spanish Agency for International Development Cooperation | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 36599 | 36599
-2020-01 | AECID Spanish Agency for International Development Cooperation | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 48799 | 48799
+2020-01 | AECID Spanish Agency for International Development Cooperation | 10 | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 36599 | 36599
+2020-01 | AECID Spanish Agency for International Development Cooperation | 10 | Agriculture, Forestry, Fishing | Bolivia (Plurinational State of) | 0 | 1 | commitments | ES-DIR3-EA0035768-Z02-20-P1-00900 | 48799 | 48799
 
 ## License
 

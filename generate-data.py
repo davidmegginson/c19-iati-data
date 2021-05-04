@@ -19,7 +19,8 @@ TRANSACTIONS_CSV = "transactions.csv"
 TRANSACTION_HEADERS = [
     [
         "Month",
-        "Org",
+        "Reporting org",
+        "Reporting org type",
         "Sector",
         "Recipient country",
         "Humanitarian?",
@@ -31,7 +32,8 @@ TRANSACTION_HEADERS = [
     ],
     [
         "#date+month",
-        "#org",
+        "#org+name",
+        "#org+type",
         "#sector",
         "#country",
         "#indicator+bool+humanitarian",
@@ -263,6 +265,7 @@ def process_activities (filenames):
 
             # Get the reporting-org name and C19 strictness at activity level
             org = get_org_name(activity.reporting_org)
+            org_type = str(activity.reporting_org.type)
             activity_strict = is_activity_strict(activity)
 
             # Figure out default country/sector percentage splits at the activity level
@@ -352,6 +355,7 @@ def process_activities (filenames):
                             transactions.append([
                                 month,
                                 org,
+                                org_type,
                                 get_sector_group_name(sector),
                                 get_country_name(country),
                                 1 if is_humanitarian else 0,
