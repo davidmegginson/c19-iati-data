@@ -20,8 +20,10 @@ DPORTAL_URL = "http://d-portal.org/dquery?form=xml&sql="
 """ URL base for API queries """
 
 DPORTAL_QUERY = """
-SELECT * FROM xson WHERE root = '/iati-activities/iati-activity' AND aid IN (
-    SELECT DISTINCT aid FROM xson WHERE
+SELECT * FROM xson WHERE root = '/iati-activities/iati-activity' AND
+    (xson->>'/reporting-org@secondary-reporter'='0' OR xson->>'/reporting-org@secondary-reporter'='' OR
+    xson->>'/reporting-org@secondary-reporter' IS NULL) AND aid IN (
+    SELECT aid FROM xson WHERE
     (
         root='/iati-activities/iati-activity/humanitarian-scope' AND
         xson->>'@type'='1' AND
@@ -54,8 +56,10 @@ SELECT * FROM xson WHERE root = '/iati-activities/iati-activity' AND aid IN (
         root='/iati-activities/iati-activity/transaction/sector' AND
         xson->>'@code'='12264' AND
         (xson->>'@vocabulary'='1' OR xson->>'@vocabulary'='' OR xson->>'@vocabulary' IS NULL)  
-    )
-) LIMIT {limit} OFFSET {offset}"""
+    ) GROUP BY aid ORDER BY max(xson->>'@iati-activities:generated-datetime'), max(xson->>'@last-updated-datetime'), aid LIMIT {limit} OFFSET {offset}
+)
+
+"""
 """ Query in D-Portal's SQL-like language - see https://d-portal.org/dquery/ """
 
 #
@@ -71,6 +75,7 @@ def main (output_dir):
     while True:
         url = DPORTAL_URL + format(urllib.parse.quote(DPORTAL_QUERY.format(limit=LIMIT, offset=offset)))
         response = requests.get(url)
+        # print(response.status_code, response.text, file=sys.stderr)
         response.raise_for_status()
         if "<iati-activity" not in response.text:
             # If the result doesn't contain any IATI activities, we're done
