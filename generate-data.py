@@ -263,6 +263,10 @@ def process_activities (filenames):
                 continue
             activities_seen.add(identifier)
 
+            # Skip activities from a secondary reporter (should have been filtered out already)
+            if activity.secondary_reporter:
+                continue
+
             # Get the reporting-org name and C19 strictness at activity level
             org = get_org_name(activity.reporting_org)
             org_type = str(activity.reporting_org.type)
@@ -305,7 +309,7 @@ def process_activities (filenames):
 
 
             #
-            # Walk through the transactions one-by-one
+            # Walk through the activity's transactions one-by-one, and split by country/sector
             #
 
             for transaction in activity.transactions:
@@ -332,7 +336,10 @@ def process_activities (filenames):
                     continue
 
                 # transaction status defaults to activity
-                is_humanitarian = activity.humanitarian or transaction.humanitarian
+                if transaction.humanitarian is None:
+                    is_humanitarian = activity.humanitarian
+                else:
+                    is_humanitarian = transaction.humanitarian
                 is_strict = activity_strict or is_transaction_strict(transaction)
 
                 # Make the splits for the transaction (default to activity splits)
