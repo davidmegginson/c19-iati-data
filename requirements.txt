@@ -1,2 +1,3 @@
 diterator>=0.5
+libhxl
 requests
