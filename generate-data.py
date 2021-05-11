@@ -53,7 +53,7 @@ TRANSACTION_HEADERS = [
 json_files = {}
 """ Cache for loaded JSON files """
 
-org_names = {}
+org_names = None
 """ Map from IATI identifiers to organisation names """
 
 
@@ -86,19 +86,32 @@ def get_org_name (org):
 
     """
     global org_names
-    ref = org.ref
-    name = clean_string(str(org.name))
 
-    if ref and ref in org_names:
+    # Prime with org identifiers from code4iati
+    if org_names is None:
+        map = load_json("data/IATIOrganisationIdentifier.json")
+        org_names = {}
+        for entry in map["data"]:
+            code = clean_string(entry["code"]).lower()
+            org_names[code] = clean_string(entry["name"])
+
+    name = None if org.name is None else clean_string(str(org.name))
+    ref = None if org.ref is None else clean_string(str(org.ref)).lower()
+
+    # We have a ref and an existing match
+    if ref is not None and ref in org_names:
+        # existing match
         return org_names[ref]
-    else:
-        # FIXME - if the name is missing the first time, but there's an IATI identifier,
-        # we'll have blanks initially; we need an initial table to prime it
-        if name:
+
+    # No existing match, but we have a name
+    if name is not None:
+        if ref is not None:
+            # if there's a ref, save it for future matching
             org_names[ref] = name
-            return name
-        else:
-            return "(Unspecified org)"
+        return name
+
+    # We can't figure out anything
+    return "(Unspecified org)"
 
 def get_sector_group_name (code):
     """ Look up a group name for a 3- or 5-digit sector code.
