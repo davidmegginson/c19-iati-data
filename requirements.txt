@@ -1,2 +1,2 @@
-diterator>=0.4
+diterator>=0.5
 requests
