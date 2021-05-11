@@ -3,7 +3,7 @@ Also disaggregate by strict vs loose C19, and humanitarian status
 
 """
 
-import datetime, diterator, logging, re, sys
+import datetime, diterator, hxl, logging, re, sys
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 #
 # Constants
 #
+
+DEFAULT_ORG = "(unspecified org)"
 
 TRANSACTIONS_JSON = "transactions.json"
 
@@ -45,6 +47,63 @@ TRANSACTION_HEADERS = [
     ],
 ]
 
+
+FLOWS_JSON = "flows.json"
+
+FLOWS_CSV = "flows.csv"
+
+FLOW_HEADERS = [
+    [
+        "Reporting org",
+        "Reporting org type",
+        "Provider org",
+        "Receiver org",
+        "Humanitarian?",
+        "Strict?",
+        "Transaction type",
+        "Transaction direction",
+        "Total money",
+    ],
+    [
+        "#org+name+reporting",
+        "#org+reporting+type",
+        "#org+name+provider",
+        "#org+name+receiver",
+        "#indicator+bool+humanitarian",
+        "#indicator+bool+strict",
+        "#x_transaction_type",
+        "#x_transaction_direction",
+        "#value+total"
+    ],
+]
+
+TRANSACTION_TYPE_INFO = {
+    "1": {
+        "label": "Incoming Funds",
+        "classification": "spending",
+        "direction": "incoming",
+    },
+    "2": {
+        "label": "Outgoing Commitment",
+        "classification": "commitments",
+        "direction": "outgoing",
+    },
+    "3": {
+        "label": "Disbursement",
+        "classification": "spending",
+        "direction": "outgoing",
+    },
+    "4": {
+        "label": "Expenditure",
+        "classification": "spending",
+        "direction": "outgoing",
+    },
+    "11": {
+        "label": "Incoming Commitment",
+        "classification": "commitments",
+        "direction": "incoming",
+    },
+}    
 
 #
 # Global variables
@@ -95,23 +154,23 @@ def get_org_name (org):
             code = clean_string(entry["code"]).lower()
             org_names[code] = clean_string(entry["name"])
 
-    name = None if org.name is None else clean_string(str(org.name))
-    ref = None if org.ref is None else clean_string(str(org.ref)).lower()
+    name = None if org is None or org.name is None else clean_string(str(org.name))
+    ref = None if org is None or org.ref is None else clean_string(str(org.ref)).lower()
 
     # We have a ref and an existing match
-    if ref is not None and ref in org_names:
+    if ref and ref in org_names:
         # existing match
         return org_names[ref]
 
     # No existing match, but we have a name
-    if name is not None:
+    if name:
         if ref is not None:
             # if there's a ref, save it for future matching
             org_names[ref] = name
         return name
 
     # We can't figure out anything
-    return "(Unspecified org)"
+    return DEFAULT_ORG
 
 def get_sector_group_name (code):
     """ Look up a group name for a 3- or 5-digit sector code.
@@ -263,6 +322,8 @@ def process_activities (filenames):
 
     transactions = list()
 
+    flows = []
+
     activities_seen = set()
 
     this_month = datetime.datetime.utcnow().isoformat()[:7]
@@ -327,26 +388,27 @@ def process_activities (filenames):
 
             for transaction in activity.transactions:
 
-                # Skip transactions with no values, or with out-of-range months
                 month = transaction.date[:7]
-                if month < "2020-01" or month > this_month or transaction.value is None:
+                if month < "2020-01" or month > this_month or not transaction.value:
+                    # Skip transactions with no values or with out-of-range months
                     continue
 
-                # Convert to USD
+                type = transaction.type
+                if type in TRANSACTION_TYPE_INFO:
+                    type_info = TRANSACTION_TYPE_INFO[type]
+                else:
+                    # skip transaction types that don't interest us
+                    continue
+
+                # Convert the transaction value to USD
                 value = convert_to_usd(transaction.value, transaction.currency, transaction.date)
 
-                # Set the factors based on the type (commitments or spending)
-                if transaction.type == "2":
-                    # outgoing commitment
-                    type = "commitments"
-                    net_value = value * commitment_factor
-                elif transaction.type in ["3", "4"]:
-                    # disbursement or expenditure (== spending)
-                    type = "spending"
-                    net_value = value * spending_factor
-                else:
-                    # if it's anything else, skip it
-                    continue
+                # Set the net (new money) factors based on the type (commitments or spending)
+                if type_info["direction"] == "outgoing":
+                    if type_info["classification"] == "commitments":
+                        net_value = value * commitment_factor
+                    else:
+                        net_value = value * spending_factor
 
                 # transaction status defaults to activity
                 if transaction.humanitarian is None:
@@ -365,28 +427,58 @@ def process_activities (filenames):
                 for country, country_percentage in country_splits.items():
                     for sector, sector_percentage in sector_splits.items():
 
+                        sector_name = get_sector_group_name(sector)
+                        country_name = get_country_name(country)
+
+                        #
+                        # Add to transactions
+                        #
+
                         net_money = int(round(net_value * country_percentage * sector_percentage))
                         total_money = int(round(value * country_percentage * sector_percentage))
 
                         # Fill in only if we end up with a non-zero value
-                        if net_money != 0 or total_money != 0:
+                        if type_info["direction"] == "outgoing" and (net_money != 0 or total_money != 0):
 
                             # add to transactions
                             transactions.append([
                                 month,
                                 org,
                                 org_type,
-                                get_sector_group_name(sector),
-                                get_country_name(country),
+                                sector_name,
+                                country_name,
                                 1 if is_humanitarian else 0,
                                 1 if is_strict else 0,
-                                type,
+                                type_info["classification"],
                                 identifier,
                                 net_money,
                                 total_money,
                             ])
 
-    return transactions
+                    #
+                    # Add to flows
+                    #
+                    if type_info["direction"] == "incoming":
+                        provider = get_org_name(transaction.provider_org)
+                        receiver = None
+                    else:
+                        provider = None
+                        receiver = get_org_name(transaction.receiver_org)
+                    if org != provider and org != receiver and org != DEFAULT_ORG:
+                        # ignore internal transactions or unknown reporting orgs
+                        flows.append([
+                            org,
+                            org_type,
+                            provider,
+                            receiver,
+                            1 if is_humanitarian else 0,
+                            1 if is_strict else 0,
+                            type_info["classification"],
+                            type_info["direction"],
+                            total_money
+                        ])
+
+    return (transactions, flows,)
 
 
 #
@@ -407,8 +499,13 @@ if __name__ == "__main__":
     logger.info("Writing output to directory %s", output_dir)
 
     # Build the accumulators from the IATI activities and transactions
-    transactions = process_activities(sys.argv[2:])
+    transactions, flows = process_activities(sys.argv[2:])
     logger.info("Processed %d transactions", len(transactions))
+    logger.info("Processed %d flows", len(flows))
+
+    #
+    # Write transactions
+    #
 
     # Add headers and sort the transactions.
     transactions = TRANSACTION_HEADERS + sorted(transactions)
@@ -422,5 +519,25 @@ if __name__ == "__main__":
         writer = csv.writer(output)
         for row in transactions:
             writer.writerow(row)
+
+    #
+    # Prepare and write flows
+    #
+
+    # Add headers and aggregate
+    flows = hxl.data(FLOW_HEADERS + flows).count(
+        FLOW_HEADERS[1][:-1], # make a list of patterns from all but the last column of the hashtag row
+        aggregators="sum(#value+total) as Total money#value+total"
+    ).cache()
+
+    # Write the JSON
+    with open(os.path.join(output_dir, FLOWS_JSON), "w") as output:
+        for line in flows.gen_json():
+            print(line, file=output, end="")
+
+    # Write the CSV
+    with open(os.path.join(output_dir, FLOWS_CSV), "w") as output:
+        for line in flows.gen_csv():
+            print(line, file=output, end="")
 
 # end
