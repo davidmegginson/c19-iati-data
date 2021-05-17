@@ -192,7 +192,7 @@ function showTopLists (data) {
 // Main entry point
 // First, download transactions.json, then set things moving
 //
-fetch("data/transactions.json").then(response => {
+fetch("https://ocha-dap.github.io/hdx-scraper-iati-viz/transactions.json").then(response => {
     response.json().then(rows => {
 
         // HXLated data
