@@ -160,7 +160,7 @@ function showResults(data, params) {
 /**
  * Show the top-10 lists
  */
-function showTopLists (data) {
+function showTopLists (data, alwaysTotals) {
 
     function populateList (id, data, entityPattern, valuePattern) {
         let listNode = document.getElementById(id);
@@ -169,7 +169,7 @@ function showTopLists (data) {
         // .count() totals for the tag pattern provided (e.g. #org+name) and number (e.g. #value.net)
         // .sort() by the sums, descending
         // .preview() just the top 10 results
-        let rows = spendingData.count(entityPattern, valuePattern).sort("#value+sum", true).preview(10).rows;
+        let rows = data.count(entityPattern, valuePattern).sort("#value+sum", true).preview(10).rows;
         listNode.innerHTML = "";
         rows.forEach(row => {
             let itemNode = document.createElement("li");
@@ -180,12 +180,17 @@ function showTopLists (data) {
 
     // First, filter for only spending (we're not counting commitments)
     let spendingData = data.withRows("x_transaction_type=spending");
+    let commitmentsData = data.withRows("x_transaction_type=commitments");
 
     // Next, specify what to count for each country
-    populateList("top.orgs", spendingData, "#org+name", "#value+total");
-    populateList("top.sectors", spendingData, "#sector", "#value+net");
-    populateList("top.countries", spendingData, "#country", "#value+net");
+    populateList("top.commitments.orgs", commitmentsData, "#org+name", "#value+total");
+    populateList("top.commitments.sectors", commitmentsData, "#sector", alwaysTotals === true ? "#value+total" : "#value+net");
+    populateList("top.commitments.countries", commitmentsData, "#country", alwaysTotals === true ? "#value+total" : "#value+net");
 
+    populateList("top.spending.orgs", spendingData, "#org+name", "#value+total");
+    populateList("top.spending.sectors", spendingData, "#sector", alwaysTotals === true ? "#value+total" : "#value+net");
+    populateList("top.spending.countries", spendingData, "#country", alwaysTotals === true ? "#value+total" : "#value+net");
+    
 }
 
 //
@@ -211,6 +216,6 @@ fetch("https://ocha-dap.github.io/hdx-scraper-iati-viz/transactions.json").then(
         showResults(filteredData, params);
 
         // Show the top 10 lists in the HTML page
-        showTopLists(filteredData);
+        showTopLists(filteredData, (params.get("org") && params.get("org") != "*"));
     });
 });
