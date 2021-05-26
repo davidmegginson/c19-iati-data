@@ -1,3 +1,11 @@
+/**
+ * Display the metadata
+ */
+function showMetadata (metadata) {
+    console.log(metadata);
+    document.getElementById("last-updated").textContent = metadata["#date+run"];
+    document.getElementById("total-transactions").textContent = metadata["#meta+transactions+num"].toLocaleString();
+}
 
 /**
  * Prepopulate the form
@@ -202,6 +210,9 @@ fetch("https://ocha-dap.github.io/hdx-scraper-iati-viz/transactions.json").then(
 
         // The rows are in a "data" section now
         let rows = result.data;
+
+        // Show the metadata
+        showMetadata(result.metadata);
 
         // HXLated data
         let data = hxl.wrap(rows);
