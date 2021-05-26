@@ -198,7 +198,10 @@ function showTopLists (data, alwaysTotals) {
 // First, download transactions.json, then set things moving
 //
 fetch("https://ocha-dap.github.io/hdx-scraper-iati-viz/transactions.json").then(response => {
-    response.json().then(rows => {
+    response.json().then(result => {
+
+        // The rows are in a "data" section now
+        let rows = result.data;
 
         // HXLated data
         let data = hxl.wrap(rows);
